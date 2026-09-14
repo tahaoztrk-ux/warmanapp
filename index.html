@@ -1,0 +1,630 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Warman TaskFlow</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+    <script src="https://npmcdn.com/flatpickr/dist/l10n/tr.js"></script>
+    <script src="https://unpkg.com/@phosphor-icons/web"></script>
+
+    <style>
+        :root {
+            --bg: #f8fafc; --panel: rgba(255, 255, 255, 0.85); --text: #0f172a; --text-muted: #64748b; 
+            --border: #e2e8f0; --primary: #3b82f6; --primary-hover: #2563eb; --danger: #ef4444;
+        }
+        [data-theme="dark"] {
+            --bg: #0f172a; --panel: rgba(30, 41, 59, 0.7); --text: #f8fafc; --text-muted: #94a3b8; 
+            --border: #334155; --primary: #4facfe; --primary-hover: #38bdf8;
+        }
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; transition: background-color 0.3s, border-color 0.3s; }
+        body { font-family: 'Inter', sans-serif; background-color: var(--bg); color: var(--text); padding: 2rem; min-height: 100vh; }
+        
+        .header-top { display: flex; justify-content: space-between; align-items: center; max-width: 1100px; margin: 0 auto 2rem auto; }
+        .header-top h1 { display: flex; align-items: center; gap: 10px; font-size: 1.5rem; font-weight: 700; }
+        .theme-toggle { background: var(--panel); border: 1px solid var(--border); color: var(--text); padding: 10px; border-radius: 50%; cursor: pointer; display: flex; align-items: center; justify-content: center; backdrop-filter: blur(10px); }
+        .theme-toggle:hover { color: var(--primary); border-color: var(--primary); }
+
+        .container { max-width: 1100px; margin: 0 auto; display: grid; grid-template-columns: 380px 1fr; gap: 2rem; }
+        .panel { background: var(--panel); backdrop-filter: blur(16px); padding: 1.5rem; border-radius: 16px; border: 1px solid var(--border); box-shadow: 0 4px 30px rgba(0, 0, 0, 0.05); }
+        .panel h2 { font-size: 1.1rem; margin-bottom: 1.5rem; border-bottom: 1px solid var(--border); padding-bottom: 0.5rem; display: flex; align-items: center; gap: 8px; }
+        
+        .form-group { margin-bottom: 1.2rem; }
+        .form-group label { display: block; font-size: 0.85rem; font-weight: 600; margin-bottom: 0.5rem; color: var(--text-muted); }
+        input[type="text"], input[type="time"], select, textarea { width: 100%; padding: 0.75rem; border: 1px solid var(--border); background: transparent; color: var(--text); border-radius: 8px; font-family: inherit; font-size: 0.875rem; outline: none; }
+        input:focus, select:focus, textarea:focus { border-color: var(--primary); box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1); }
+        textarea { resize: vertical; min-height: 80px; }
+        
+        .subtask-input-row { display: flex; gap: 0.5rem; margin-bottom: 0.5rem; }
+        .btn-add-sub { background: transparent; border: 1px solid var(--border); color: var(--text); padding: 0 1rem; border-radius: 8px; cursor: pointer; font-weight: 500; }
+        .btn-add-sub:hover { border-color: var(--primary); color: var(--primary); }
+        .temp-subtasks { list-style: none; font-size: 0.85rem; }
+        .temp-subtasks li { padding: 0.5rem 0; color: var(--text-muted); display: flex; justify-content: space-between; border-bottom: 1px dashed var(--border); }
+        .remove-temp { color: var(--danger); cursor: pointer; font-size: 1.1rem; }
+
+        .btn-save { width: 100%; background: var(--primary); color: white; border: none; padding: 0.875rem; border-radius: 8px; font-weight: 600; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px; }
+        .btn-save:hover { background: var(--primary-hover); transform: translateY(-1px); }
+
+        @keyframes fadeInUp { from { opacity: 0; transform: translateY(15px); } to { opacity: 1; transform: translateY(0); } }
+        .task-list { display: flex; flex-direction: column; gap: 1rem; }
+        .task-card { animation: fadeInUp 0.4s ease backwards; background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 1.2rem; cursor: pointer; backdrop-filter: blur(10px); }
+        .task-card:hover { transform: translateY(-3px); border-color: var(--primary); box-shadow: 0 10px 25px rgba(0,0,0,0.05); }
+        .task-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+        .task-title { font-weight: 600; font-size: 1.1rem; display: flex; align-items: center; gap: 8px; }
+        .task-date { font-size: 0.75rem; background: rgba(100, 116, 139, 0.1); padding: 0.3rem 0.6rem; border-radius: 6px; color: var(--text-muted); display: flex; align-items: center; gap: 5px; }
+        .task-desc { font-size: 0.85rem; color: var(--text-muted); margin-bottom: 12px; }
+        .delete-btn { color: var(--danger); background: none; border: none; cursor: pointer; font-size: 1.2rem; float: right; }
+        .delete-btn:hover { transform: scale(1.1); }
+        .empty-state { text-align: center; padding: 3rem 1rem; color: var(--text-muted); }
+        .empty-state i { font-size: 4rem; color: var(--border); margin-bottom: 1rem; }
+        .empty-state p { font-size: 0.9rem; }
+
+        /* Günlük Görevler */
+        .assignment-panel { max-width: 1100px; margin: 0 auto 2rem; }
+        .assignment-form { display: grid; grid-template-columns: 1.4fr 1fr 0.8fr auto; gap: 0.75rem; align-items: end; }
+        .assignment-form .form-group { margin-bottom: 0; }
+        .assignment-form .btn-save { width: auto; min-width: 135px; }
+        .assignment-list { display: flex; flex-direction: column; gap: 0.75rem; margin-top: 1.25rem; }
+        .assignment-item { display: flex; flex-direction: column; align-items: stretch; gap: 0; padding: 0.9rem 1rem; border: 1px solid var(--border); border-radius: 10px; background: rgba(100, 116, 139, 0.05); }
+        .assignment-main { display: flex; align-items: center; gap: 1rem; width: 100%; }
+        .assignment-item.done { background: rgba(34, 197, 94, 0.08); border-color: rgba(34, 197, 94, 0.28); }
+        .assignment-item.done .assignment-main .assignment-text { color: var(--text-muted); text-decoration: line-through; }
+        .assignment-check { appearance: none; -webkit-appearance: none; width: 22px; height: 22px; flex: 0 0 22px; border: 1.5px solid #94a3b8; border-radius: 7px; background: var(--panel); cursor: pointer; display: grid; place-content: center; }
+        .assignment-check::before { content: '✓'; color: #15803d; font-weight: 700; font-size: 0.85rem; transform: scale(0); transition: transform 0.15s ease; }
+        .assignment-check:checked { border-color: rgba(34, 197, 94, 0.5); background: rgba(34, 197, 94, 0.16); }
+        .assignment-check:checked::before { transform: scale(1); }
+        .assignment-time { min-width: 115px; color: var(--primary); font-size: 0.82rem; font-weight: 700; display: flex; align-items: center; gap: 0.35rem; }
+        .assignment-text { flex: 1; font-size: 0.9rem; font-weight: 600; }
+        .assignment-delete { background: transparent; border: 0; color: var(--danger); cursor: pointer; font-size: 1.15rem; }
+        .assignment-empty { color: var(--text-muted); font-size: 0.9rem; padding: 0.75rem 0; }
+        .assignment-subtasks { margin-left: 2.7rem; margin-top: 0.75rem; display: flex; flex-direction: column; gap: 0.5rem; }
+        .subtask-item { display: flex; align-items: center; gap: 0.75rem; padding: 0.4rem 0; border-bottom: 1px dashed var(--border); }
+        .subtask-item:last-child { border-bottom: none; }
+        .subtask-item.done .subtask-text { color: var(--text-muted); text-decoration: line-through; }
+        .sub-check { width: 18px; height: 18px; flex: 0 0 18px; border-radius: 5px; }
+        .subtask-text { flex: 1; font-size: 0.85rem; color: var(--text); }
+        .sub-del { font-size: 1rem; color: var(--danger); opacity: 0.7; border: none; background: transparent; cursor: pointer; }
+        .sub-del:hover { opacity: 1; }
+        .add-subtask-row { display: flex; gap: 0.5rem; margin-top: 0.5rem; align-items: center; }
+        .add-subtask-row input { flex: 1; padding: 0.5rem 0.75rem; font-size: 0.8rem; background: var(--bg); border: 1px dashed var(--border); border-radius: 6px; color: var(--text); }
+
+        /* İş Takibi */
+        .work-tracking-panel { max-width: 1100px; margin: 2rem auto 0; }
+        .work-tracking-form { display: grid; grid-template-columns: 1fr 1fr 1fr 1fr auto; gap: 0.75rem; align-items: end; }
+        .work-tracking-form .form-group { margin-bottom: 0; }
+        .work-tracking-form .btn-save { width: auto; min-width: 145px; }
+        .work-description { grid-column: 1 / -2; }
+        .work-description textarea { min-height: 48px; height: 48px; }
+        .work-tracking-summary { margin-top: 1.15rem; padding: 0.9rem 1rem; border-radius: 10px; background: rgba(34, 197, 94, 0.08); color: var(--text); font-size: 0.85rem; display: none; align-items: center; gap: 0.5rem; }
+        .work-tracking-summary.visible { display: flex; }
+        .work-tracking-summary i { color: #22c55e; font-size: 1.1rem; }
+        .work-tracking-list { margin-top: 1.15rem; overflow-x: auto; }
+        .work-tracking-table { width: 100%; min-width: 700px; border-collapse: collapse; font-size: 0.85rem; }
+        .work-tracking-table th { padding: 0.7rem; text-align: left; color: var(--text-muted); font-size: 0.75rem; border-bottom: 1px solid var(--border); }
+        .work-tracking-table td { padding: 0.8rem 0.7rem; border-bottom: 1px solid var(--border); vertical-align: middle; }
+        .work-tracking-table tr:last-child td { border-bottom: 0; }
+        .work-tracking-date { color: var(--primary); font-weight: 700; white-space: nowrap; }
+        .month-separator td { background: rgba(59, 130, 246, 0.06); color: var(--primary); font-weight: 700; text-align: center; padding: 0.6rem; border-bottom: 1px solid rgba(59, 130, 246, 0.2); font-size: 0.95rem; }
+        .tracking-icon { display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 30px; border-radius: 50%; font-size: 1rem; }
+        .tracking-icon.yes { background: rgba(34, 197, 94, 0.13); color: #16a34a; }
+        .tracking-icon.no { background: rgba(239, 68, 68, 0.13); color: #dc2626; }
+        .tracking-icon.leave { background: rgba(245, 158, 11, 0.13); color: #d97706; }
+        .tracking-note { max-width: 250px; color: var(--text-muted); }
+        .tracking-action { border: 0; background: transparent; cursor: pointer; font-size: 1.1rem; color: var(--text-muted); }
+        .tracking-action:hover { color: var(--primary); }
+        .tracking-action.delete:hover { color: var(--danger); }
+        .work-tracking-empty { color: var(--text-muted); font-size: 0.9rem; padding: 0.75rem 0; text-align: center; }
+
+        #loadingOverlay {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: var(--bg); display: flex; align-items: center; justify-content: center;
+            z-index: 9999; color: var(--primary); font-size: 1.5rem; transition: opacity 0.3s;
+        }
+
+        @media (max-width: 760px) {
+            body { padding: 1rem; }
+            .container { grid-template-columns: 1fr; gap: 1rem; }
+            .assignment-form { grid-template-columns: 1fr 1fr; }
+            .assignment-form .form-group:first-child { grid-column: 1 / -1; }
+            .assignment-form .btn-save { width: 100%; grid-column: 1 / -1; }
+            .work-tracking-form { grid-template-columns: 1fr 1fr; }
+            .work-tracking-form .form-group:first-child { grid-column: 1 / -1; }
+            .work-tracking-form .btn-save { width: 100%; grid-column: 1 / -1; }
+            .task-header, .assignment-main { align-items: flex-start; }
+            .assignment-main { flex-wrap: wrap; gap: 0.5rem; }
+            .assignment-text { flex-basis: calc(100% - 2rem); }
+            .assignment-subtasks { margin-left: 0; }
+            .work-description { grid-column: 1 / -1; }
+        }
+    </style>
+</head>
+<body>
+
+    <div id="loadingOverlay"><i class="ph ph-spinner ph-spin"></i> &nbsp; Veritabanına Bağlanıyor...</div>
+
+    <div class="header-top">
+        <h1><i class="ph-fill ph-projector-screen"></i> Warman TaskFlow (Bulut)</h1>
+        <button class="theme-toggle" onclick="toggleTheme()" title="Temayı Değiştir">
+            <i class="ph ph-moon" id="themeIcon" style="font-size: 1.2rem;"></i>
+        </button>
+    </div>
+
+    <section class="panel assignment-panel">
+        <h2><i class="ph ph-calendar-check"></i> Günlük Görev Atama</h2>
+        <div class="assignment-form">
+            <div class="form-group">
+                <label for="assignmentText">O gün ne yapacaksın?</label>
+                <input type="text" id="assignmentText" placeholder="Örn: Müşteri sunumunu hazırla">
+            </div>
+            <div class="form-group">
+                <label for="assignmentDate">Tarih</label>
+                <input type="text" id="assignmentDate" placeholder="Tarih seçin">
+            </div>
+            <div class="form-group">
+                <label for="assignmentTime">Saat</label>
+                <input type="text" id="assignmentTime" placeholder="Örn: 14:50" maxlength="5">
+            </div>
+            <button class="btn-save" onclick="saveAssignment()"><i class="ph ph-plus"></i> Görev Ekle</button>
+        </div>
+        <div class="assignment-list" id="assignmentList"></div>
+    </section>
+
+    <div class="container">
+        <div class="panel">
+            <h2><i class="ph ph-plus-circle"></i> Yeni Proje Tanımla</h2>
+            <div class="form-group">
+                <label>Proje Adı</label>
+                <input type="text" id="taskTitle" placeholder="Örn: E-Ticaret Altyapısı">
+            </div>
+            <div class="form-group">
+                <label>Tarih Seçimi</label>
+                <input type="text" id="taskDate" placeholder="Takvimden seçiniz...">
+            </div>
+            <div class="form-group">
+                <label>Proje Notları</label>
+                <textarea id="taskDesc" placeholder="Detayları buraya girin..."></textarea>
+            </div>
+            <div class="form-group">
+                <label>Hızlı Yapılacaklar</label>
+                <div class="subtask-input-row">
+                    <input type="text" id="subtaskInput" placeholder="Madde ekle...">
+                    <button class="btn-add-sub" onclick="addTempSubtask()"><i class="ph ph-plus"></i></button>
+                </div>
+                <ul class="temp-subtasks" id="tempSubtaskList"></ul>
+            </div>
+            <button class="btn-save" onclick="saveTask()">
+                <i class="ph ph-cloud-arrow-up"></i> Buluta Kaydet
+            </button>
+        </div>
+
+        <div class="panel">
+            <h2><i class="ph ph-kanban"></i> Aktif İş Akışları</h2>
+            <div class="task-list" id="taskList"></div>
+        </div>
+    </div>
+
+    <section class="panel work-tracking-panel">
+        <h2><i class="ph ph-briefcase"></i> İş Takibi</h2>
+        <div class="work-tracking-form">
+            <div class="form-group">
+                <label for="workTrackingDate">Tarih</label>
+                <input type="text" id="workTrackingDate" placeholder="Tarih seçin">
+            </div>
+            <div class="form-group">
+                <label for="attendanceStatus">İşe gelme durumu</label>
+                <select id="attendanceStatus">
+                    <option value="">Seçim yapın</option>
+                    <option value="İşe geldim">✅ İşe geldim</option>
+                    <option value="Gelmedim">❌ Gelmedim</option>
+                    <option value="İzinliyim">🟡 İzinliyim</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label for="overtimeStatus">Mesai durumu</label>
+                <select id="overtimeStatus">
+                    <option value="">Seçim yapın</option>
+                    <option value="Mesai yaptım">✅ Mesai yaptım</option>
+                    <option value="Mesai yapmadım">❌ Mesai yapmadım</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label for="workLocation">Çalışma yeri</label>
+                <select id="workLocation">
+                    <option value="">Seçim yapın</option>
+                    <option value="Merkez">🏢 Merkez</option>
+                    <option value="İvedik">🏭 İvedik</option>
+                    <option value="Saha">🦺 Saha</option>
+                    <option value="Uzaktan">🏠 Uzaktan</option>
+                </select>
+            </div>
+            <div class="form-group work-description">
+                <label for="workDescription">Açıklama</label>
+                <textarea id="workDescription" placeholder="Bugün yaptıklarınız veya notunuz..."></textarea>
+            </div>
+            <button class="btn-save" type="button" onclick="saveWorkTracking()"><i class="ph ph-check"></i> Kaydı Kaydet</button>
+        </div>
+        
+        <div class="work-tracking-summary" id="workTrackingSummary" role="status"></div>
+        <div class="work-tracking-list" id="workTrackingList"></div>
+    </section>
+
+    <script>
+        // Supabase Bağlantı Bilgileri
+        const SUPABASE_URL = 'https://gpdvqhdhbreiqazlvwlh.supabase.co';
+        const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImdwZHZxaGRoYnJlaXFhemx2d2xoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODkzNTkxMzYsImV4cCI6MjEwNDkzNTEzNn0.vfqPZuGNIwch5MjxDAeCAxCzkIplC3JFbXvdQAGBE58';
+
+        let tasks = [];
+        let assignments = [];
+        let workTrackingRecords = [];
+        let currentSubtasks = [];
+        const aylar = ["Ocak", "Şubat", "Mart", "Nisan", "Mayıs", "Haziran", "Temmuz", "Ağustos", "Eylül", "Ekim", "Kasım", "Aralık"];
+
+        // API İstek Fonksiyonu
+        async function supabaseRequest(endpoint, method = 'GET', data = null) {
+            const options = {
+                method: method,
+                headers: {
+                    'apikey': SUPABASE_KEY,
+                    'Authorization': `Bearer ${SUPABASE_KEY}`,
+                    'Content-Type': 'application/json',
+                    'Prefer': 'return=representation'
+                }
+            };
+            if (data) options.body = JSON.stringify(data);
+            try {
+                const response = await fetch(`${SUPABASE_URL}/rest/v1/${endpoint}`, options);
+                if (!response.ok) throw new Error(response.statusText);
+                if (method !== 'DELETE') return await response.json();
+            } catch (err) { console.error("Supabase Hatası:", err); }
+        }
+
+        // Başlangıçta Verileri Çek
+        async function loadCloudData() {
+            try {
+                const [pData, aData, wData] = await Promise.all([
+                    supabaseRequest('projects?select=*&order=id.desc'),
+                    supabaseRequest('assignments?select=*&order=id.desc'),
+                    supabaseRequest('work_tracking?select=*&order=id.desc')
+                ]);
+
+                tasks = pData.map(p => ({ ...p, subtasks: JSON.parse(p.subtasks_json || '[]') }));
+                assignments = aData.map(a => ({ ...a, subtasks: JSON.parse(a.subtasks_json || '[]') }));
+                workTrackingRecords = wData;
+
+                renderTasks(); renderAssignments(); renderWorkTrackingRecords();
+                if(workTrackingRecords.length > 0) renderWorkTrackingSummary(workTrackingRecords[0]);
+                
+                document.getElementById('loadingOverlay').style.opacity = '0';
+                setTimeout(() => document.getElementById('loadingOverlay').style.display = 'none', 300);
+            } catch(e) { alert("Veriler yüklenirken hata oluştu!"); }
+        }
+
+        // Temalar ve Flatpickr
+        const currentTheme = localStorage.getItem('theme') || 'light';
+        document.documentElement.setAttribute('data-theme', currentTheme);
+        document.getElementById('themeIcon').className = currentTheme === 'dark' ? 'ph ph-sun' : 'ph ph-moon';
+
+        function toggleTheme() {
+            const theme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
+            document.documentElement.setAttribute('data-theme', theme);
+            localStorage.setItem('theme', theme);
+            document.getElementById('themeIcon').className = theme === 'dark' ? 'ph ph-sun' : 'ph ph-moon';
+        }
+
+        function formatDetailedDate(dateStr) {
+            if (!dateStr) return 'Tarihsiz';
+            if (dateStr.includes('.')) {
+                const parts = dateStr.split('.');
+                if (parts.length === 3) {
+                    const d = new Date(`${parts[2]}-${parts[1]}-${parts[0]}`);
+                    return d.toLocaleDateString('tr-TR', { day: 'numeric', month: 'long', year: 'numeric', weekday: 'long' });
+                }
+            }
+            return dateStr;
+        }
+
+        const fpOptions = { locale: "tr", dateFormat: "d.m.Y", altInput: true, altFormat: "d F Y l", allowInput: true };
+        flatpickr("#taskDate", fpOptions);
+        flatpickr("#assignmentDate", { ...fpOptions, defaultDate: new Date() });
+        flatpickr("#workTrackingDate", { ...fpOptions, defaultDate: new Date() });
+
+        document.getElementById('assignmentTime').addEventListener('input', function(e) {
+            let val = this.value.replace(/\D/g, ''); 
+            if (val.length >= 3) val = val.substring(0, 2) + ':' + val.substring(2, 4);
+            this.value = val;
+        });
+
+        function setupEnterNavigation() {
+            document.getElementById('taskTitle').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); document.getElementById('taskDesc').focus(); } });
+            document.getElementById('taskDesc').addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); document.getElementById('subtaskInput').focus(); } });
+            document.getElementById('subtaskInput').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); if (e.target.value.trim() !== '') addTempSubtask(); else saveTask(); } });
+            document.getElementById('attendanceStatus').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); document.getElementById('overtimeStatus').focus(); } });
+            document.getElementById('overtimeStatus').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); document.getElementById('workLocation').focus(); } });
+            document.getElementById('workLocation').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); document.getElementById('workDescription').focus(); } });
+            document.getElementById('workDescription').addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); saveWorkTracking(); } });
+            document.getElementById('assignmentText').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); document.getElementById('assignmentTime').focus(); } });
+            document.getElementById('assignmentTime').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); saveAssignment(); } });
+        }
+        setupEnterNavigation();
+
+        // --- İŞ TAKİBİ (WORK TRACKING) ---
+        async function saveWorkTracking() {
+            const date = document.getElementById('workTrackingDate').value;
+            const attendance = document.getElementById('attendanceStatus').value;
+            const overtime = document.getElementById('overtimeStatus').value;
+            const location = document.getElementById('workLocation').value;
+            const description = document.getElementById('workDescription').value.trim();
+
+            if (!date || !attendance || !overtime || !location) return alert('Tarih, işe gelme, mesai ve konum zorunludur.');
+
+            const existingIndex = workTrackingRecords.findIndex(item => item.date === date);
+            let record;
+
+            if (existingIndex >= 0) {
+                record = { ...workTrackingRecords[existingIndex], attendance, overtime, location, description, updated_at: new Date().toISOString() };
+                workTrackingRecords[existingIndex] = record;
+                renderWorkTrackingRecords();
+                await supabaseRequest(`work_tracking?id=eq.${record.id}`, 'PATCH', record);
+            } else {
+                record = { id: Date.now(), date, attendance, overtime, location, description, updated_at: new Date().toISOString() };
+                workTrackingRecords.unshift(record);
+                renderWorkTrackingRecords();
+                await supabaseRequest('work_tracking', 'POST', record);
+            }
+
+            document.getElementById('workDescription').value = '';
+            document.getElementById('workTrackingDate').focus();
+            renderWorkTrackingSummary(record);
+        }
+
+        function renderWorkTrackingSummary(record) {
+            const summary = document.getElementById('workTrackingSummary');
+            if (!record) { summary.classList.remove('visible'); return; }
+            summary.innerHTML = `<i class="ph ph-check-circle"></i><span><strong>${formatDetailedDate(record.date)}</strong> için kaydedildi: ${record.attendance} · ${record.overtime} · ${record.location}</span>`;
+            summary.classList.add('visible');
+        }
+
+        function editWorkTracking(index) {
+            const record = workTrackingRecords[index];
+            if (!record) return;
+            document.getElementById('workTrackingDate')._flatpickr.setDate(record.date, true, 'd.m.Y');
+            document.getElementById('attendanceStatus').value = record.attendance;
+            document.getElementById('overtimeStatus').value = record.overtime;
+            document.getElementById('workLocation').value = record.location;
+            document.getElementById('workDescription').value = record.description || '';
+            document.getElementById('workTrackingDate').scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+
+        async function deleteWorkTracking(index) {
+            const record = workTrackingRecords[index];
+            if (!record || !confirm(`${formatDetailedDate(record.date)} tarihli kaydı silmek istediğinize emin misiniz?`)) return;
+            workTrackingRecords.splice(index, 1);
+            renderWorkTrackingRecords();
+            renderWorkTrackingSummary(workTrackingRecords[0]);
+            await supabaseRequest(`work_tracking?id=eq.${record.id}`, 'DELETE');
+        }
+        
+        function renderWorkTrackingRecords() {
+            const list = document.getElementById('workTrackingList');
+            if (workTrackingRecords.length === 0) {
+                list.innerHTML = '<p class="work-tracking-empty">Henüz iş takibi kaydı yok.</p>';
+                return;
+            }
+
+            const parseDate = val => { const [d,m,y] = val.split('.'); return new Date(`${y}-${m}-${d}`); };
+            const orderedRecords = workTrackingRecords.map((record, index) => ({ record, originalIndex: index }))
+                .sort((a, b) => parseDate(b.record.date) - parseDate(a.record.date));
+            
+            const attIcon = val => val === 'İşe geldim' ? '<span class="tracking-icon yes">✓</span>' : val === 'İzinliyim' ? '<span class="tracking-icon leave">−</span>' : '<span class="tracking-icon no">✕</span>';
+            const ovIcon = val => val === 'Mesai yaptım' ? '<span class="tracking-icon yes">✓</span>' : '<span class="tracking-icon no">✕</span>';
+            const locIcon = val => ({ Merkez: '🏢', İvedik: '🏭', Saha: '🦺', Uzaktan: '🏠' }[val] || '📍');
+
+            let currentMonthYear = "";
+            let tableHTML = `<table class="work-tracking-table"><thead><tr><th>Tarih</th><th>Geldi</th><th>Mesai</th><th>Konum</th><th>Açıklama</th><th>İşlem</th></tr></thead><tbody>`;
+
+            orderedRecords.forEach(({ record, originalIndex }) => {
+                const [day, month, year] = record.date.split('.');
+                const recordMonthYear = `${aylar[parseInt(month) - 1]} ${year}`;
+
+                if (recordMonthYear !== currentMonthYear) {
+                    tableHTML += `<tr class="month-separator"><td colspan="6"><i class="ph ph-calendar-blank"></i> ${recordMonthYear} Başlangıcı</td></tr>`;
+                    currentMonthYear = recordMonthYear;
+                }
+
+                tableHTML += `<tr>
+                    <td class="work-tracking-date">${formatDetailedDate(record.date)}</td>
+                    <td>${attIcon(record.attendance)}</td>
+                    <td>${ovIcon(record.overtime)}</td>
+                    <td title="${escapeHtml(record.location)}">${locIcon(record.location)}</td>
+                    <td class="tracking-note">${record.description ? `💬 ${escapeHtml(record.description)}` : '—'}</td>
+                    <td>
+                        <button class="tracking-action" onclick="editWorkTracking(${originalIndex})" title="Düzenle"><i class="ph ph-pencil-simple"></i></button>
+                        <button class="tracking-action delete" onclick="deleteWorkTracking(${originalIndex})" title="Sil"><i class="ph ph-trash"></i></button>
+                    </td>
+                </tr>`;
+            });
+            list.innerHTML = tableHTML + `</tbody></table>`;
+        }
+
+        // --- PROJELER (TASKS) ---
+        function addTempSubtask() {
+            const input = document.getElementById('subtaskInput');
+            if (input.value.trim()) {
+                currentSubtasks.push({ id: Date.now(), text: input.value.trim() });
+                input.value = ''; renderTempSubtasks();
+            }
+        }
+        function removeTempSubtask(id) { currentSubtasks = currentSubtasks.filter(sub => sub.id !== id); renderTempSubtasks(); }
+        function renderTempSubtasks() {
+            document.getElementById('tempSubtaskList').innerHTML = currentSubtasks.map(sub => `<li>- ${sub.text} <span class="remove-temp" onclick="removeTempSubtask(${sub.id})"><i class="ph ph-x"></i></span></li>`).join('');
+        }
+
+       async function saveTask() {
+    const title = document.getElementById('taskTitle').value.trim();
+    if (!title) return alert('Proje adı zorunludur.');
+
+    const newId = Date.now();
+    const newTask = {
+        id: newId,
+        title: title,
+        date: document.getElementById('taskDate').value,
+        description: document.getElementById('taskDesc').value.trim(),
+        subtasks_json: JSON.stringify(currentSubtasks)
+    };
+
+    // Kaydetme anında butonu döndür ve kullanıcıya bilgi ver
+    const btn = document.querySelectorAll('.btn-save')[1]; // Proje kaydet butonu
+    const orjText = btn.innerHTML;
+    btn.innerHTML = '<i class="ph ph-spinner ph-spin"></i> Buluta Kaydediliyor...';
+    
+    // Veritabanına post et
+    await supabaseRequest('projects', 'POST', newTask);
+    
+    // Veritabanına kaydettikten anında sonra task.html sayfasına zıpla!
+    window.location.href = `task.html?id=${newId}`;
+}
+
+        function renderTasks() {
+            const list = document.getElementById('taskList');
+            if(tasks.length === 0) return list.innerHTML = `<div class="empty-state"><i class="ph-duotone ph-folder-dashed"></i><p>Henüz bir proje eklenmemiş.</p></div>`;
+            
+            list.innerHTML = tasks.map((task, i) => `
+                <div class="task-card" style="animation-delay: ${i * 0.1}s" onclick="goToFlow(${task.id})">
+                    <div class="task-header">
+                        <span class="task-title"><i class="ph-fill ph-folder-open" style="color: var(--primary);"></i> ${escapeHtml(task.title)}</span>
+                        <span class="task-date"><i class="ph ph-calendar-blank"></i> ${formatDetailedDate(task.date)}</span>
+                    </div>
+                    <div class="task-desc">${task.description ? escapeHtml(task.description).substring(0, 50) + '...' : 'Açıklama girilmemiş.'}</div>
+                    <div style="font-size: 0.85rem; color: var(--primary); font-weight: 500; display:flex; align-items:center; gap:5px;"><i class="ph ph-share-network"></i> E-Flow Çiz</div>
+                    <button class="delete-btn" onclick="event.stopPropagation(); deleteTask(${task.id})" title="Sil"><i class="ph ph-trash"></i></button>
+                </div>
+            `).join('');
+        }
+
+        async function deleteTask(id) {
+            if(confirm('Projeyi silmek istediğinize emin misiniz?')) {
+                tasks = tasks.filter(t => t.id !== id);
+                renderTasks();
+                await supabaseRequest(`projects?id=eq.${id}`, 'DELETE');
+            }
+        }
+
+        // --- GÜNLÜK GÖREVLER (ASSIGNMENTS) ---
+        async function saveAssignment() {
+            const text = document.getElementById('assignmentText').value.trim();
+            const date = document.getElementById('assignmentDate').value;
+            let time = document.getElementById('assignmentTime').value.trim();
+
+            if (!text || !date || !time) return alert('Görev, tarih ve saat zorunludur.');
+            if (!/^\d{2}:\d{2}$/.test(time)) return alert('Saati doğru formatta girin (Örn: 14:50).');
+
+            const newAssig = {
+                id: Date.now(), text, date, time, completed: false, subtasks_json: JSON.stringify([])
+            };
+            assignments.push({ ...newAssig, subtasks: [] });
+            
+            document.getElementById('assignmentText').value = ''; document.getElementById('assignmentTime').value = ''; document.getElementById('assignmentText').focus(); 
+            renderAssignments();
+            await supabaseRequest('assignments', 'POST', newAssig);
+        }
+
+        async function deleteAssignment(id) {
+            assignments = assignments.filter(a => a.id !== id);
+            renderAssignments();
+            await supabaseRequest(`assignments?id=eq.${id}`, 'DELETE');
+        }
+
+        async function toggleAssignmentDone(id) {
+            const assignment = assignments.find(a => a.id === id);
+            if (assignment) {
+                assignment.completed = !assignment.completed;
+                renderAssignments();
+                await supabaseRequest(`assignments?id=eq.${id}`, 'PATCH', { completed: assignment.completed });
+            }
+        }
+
+        function handleAssignmentSubtaskEnter(e, assignmentId) { if (e.key === 'Enter') { e.preventDefault(); addAssignmentSubtask(assignmentId); } }
+
+        async function addAssignmentSubtask(assignmentId) {
+            const input = document.getElementById(`assignSubInput_${assignmentId}`);
+            if (!input.value.trim()) return;
+            const assignment = assignments.find(a => a.id === assignmentId);
+            if (assignment) {
+                assignment.subtasks.push({ id: Date.now(), text: input.value.trim(), completed: false });
+                renderAssignments();
+                setTimeout(() => { const ni = document.getElementById(`assignSubInput_${assignmentId}`); if (ni) ni.focus(); }, 50);
+                await supabaseRequest(`assignments?id=eq.${assignmentId}`, 'PATCH', { subtasks_json: JSON.stringify(assignment.subtasks) });
+            }
+        }
+
+        async function toggleAssignmentSubtaskDone(assignmentId, subtaskId) {
+            const assignment = assignments.find(a => a.id === assignmentId);
+            if (assignment) {
+                const sub = assignment.subtasks.find(s => s.id === subtaskId);
+                if (sub) {
+                    sub.completed = !sub.completed;
+                    renderAssignments();
+                    await supabaseRequest(`assignments?id=eq.${assignmentId}`, 'PATCH', { subtasks_json: JSON.stringify(assignment.subtasks) });
+                }
+            }
+        }
+
+        async function deleteAssignmentSubtask(assignmentId, subtaskId) {
+            const assignment = assignments.find(a => a.id === assignmentId);
+            if (assignment) {
+                assignment.subtasks = assignment.subtasks.filter(s => s.id !== subtaskId);
+                renderAssignments();
+                await supabaseRequest(`assignments?id=eq.${assignmentId}`, 'PATCH', { subtasks_json: JSON.stringify(assignment.subtasks) });
+            }
+        }
+
+        function escapeHtml(value) { return value.replace(/[&<>'"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' })[c]); }
+
+        function renderAssignments() {
+            const list = document.getElementById('assignmentList');
+            if (assignments.length === 0) return list.innerHTML = '<p class="assignment-empty">Henüz planlanmış bir görevin yok.</p>';
+
+            const ordered = [...assignments].sort((a, b) => {
+                const toDate = item => { const [d,m,y] = item.date.split('.'); return new Date(`${y}-${m}-${d}T${item.time}`); };
+                return toDate(a) - toDate(b);
+            });
+
+            list.innerHTML = ordered.map(a => `
+                <div class="assignment-item ${a.completed ? 'done' : ''}">
+                    <div class="assignment-main">
+                        <input class="assignment-check" type="checkbox" ${a.completed ? 'checked' : ''} onchange="toggleAssignmentDone(${a.id})">
+                        <span class="assignment-time"><i class="ph ph-calendar-blank"></i> ${formatDetailedDate(a.date)} · ${a.time}</span>
+                        <span class="assignment-text">${escapeHtml(a.text)}</span>
+                        <button class="assignment-delete" onclick="deleteAssignment(${a.id})"><i class="ph ph-trash"></i></button>
+                    </div>
+                    <div class="assignment-subtasks">
+                        ${(a.subtasks || []).map(sub => `
+                            <div class="subtask-item ${sub.completed ? 'done' : ''}">
+                                <input class="assignment-check sub-check" type="checkbox" ${sub.completed ? 'checked' : ''} onchange="toggleAssignmentSubtaskDone(${a.id}, ${sub.id})">
+                                <span class="subtask-text">${escapeHtml(sub.text)}</span>
+                                <button class="sub-del" onclick="deleteAssignmentSubtask(${a.id}, ${sub.id})"><i class="ph ph-x"></i></button>
+                            </div>
+                        `).join('')}
+                        <div class="add-subtask-row">
+                            <input type="text" id="assignSubInput_${a.id}" placeholder="Alt görev ekle..." onkeydown="handleAssignmentSubtaskEnter(event, ${a.id})">
+                            <button class="btn-add-sub" onclick="addAssignmentSubtask(${a.id})"><i class="ph ph-plus"></i></button>
+                        </div>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        function goToFlow(id) { window.location.href = `task.html?id=${id}`; }
+
+        // SAYFA YÜKLENDİĞİNDE VERİLERİ ÇEK
+        window.onload = loadCloudData;
+    </script>
+</body>
+</html>
