@@ -49,7 +49,7 @@
         
         .form-group { margin-bottom: 1.2rem; }
         .form-group label { display: block; font-size: 0.85rem; font-weight: 600; margin-bottom: 0.5rem; color: var(--text-muted); }
-        input[type="text"], input[type="email"], input[type="password"], input[type="time"], select, textarea { width: 100%; padding: 0.75rem; border: 1px solid var(--border); background: transparent; color: var(--text); border-radius: 8px; font-family: inherit; font-size: 0.875rem; outline: none; }
+        input[type="text"], input[type="email"], input[type="password"], input[type="time"], input[type="number"], select, textarea { width: 100%; padding: 0.75rem; border: 1px solid var(--border); background: transparent; color: var(--text); border-radius: 8px; font-family: inherit; font-size: 0.875rem; outline: none; }
         input:focus, select:focus, textarea:focus { border-color: var(--primary); box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1); }
         textarea { resize: vertical; min-height: 80px; }
         
@@ -103,7 +103,8 @@
         .add-subtask-row input { flex: 1; padding: 0.5rem 0.75rem; font-size: 0.8rem; background: var(--bg); border: 1px dashed var(--border); border-radius: 6px; color: var(--text); }
 
         .work-tracking-panel { max-width: 1100px; margin: 2rem auto 0; }
-        .work-tracking-form { display: grid; grid-template-columns: 1fr 1fr 1fr 1fr auto; gap: 0.75rem; align-items: end; }
+        /* Yeni saat kutusu sığsın diye gridi ayarladık */
+        .work-tracking-form { display: grid; grid-template-columns: 1fr 1fr 1fr 0.8fr 1fr auto; gap: 0.75rem; align-items: end; }
         .work-tracking-form .form-group { margin-bottom: 0; }
         .work-tracking-form .btn-save { width: auto; min-width: 145px; }
         .work-description { grid-column: 1 / -2; }
@@ -120,6 +121,8 @@
         .tracking-icon.yes { background: rgba(34, 197, 94, 0.13); color: #16a34a; }
         .tracking-icon.no { background: rgba(239, 68, 68, 0.13); color: #dc2626; }
         .tracking-icon.leave { background: rgba(245, 158, 11, 0.13); color: #d97706; }
+        /* Yeni saat rozeti CSS'i */
+        .tracking-icon.hours { width: auto; padding: 0 10px; border-radius: 15px; font-weight: 700; font-size: 0.85rem; }
         .tracking-note { max-width: 250px; color: var(--text-muted); }
         .tracking-action { border: 0; background: transparent; cursor: pointer; font-size: 1.1rem; color: var(--text-muted); }
         .tracking-action:hover { color: var(--primary); }
@@ -130,6 +133,11 @@
             position: fixed; top: 0; left: 0; width: 100%; height: 100%;
             background: var(--bg); display: flex; align-items: center; justify-content: center;
             z-index: 9999; color: var(--primary); font-size: 1.5rem; transition: opacity 0.3s;
+        }
+        
+        @media (max-width: 900px) {
+            .work-tracking-form { grid-template-columns: 1fr 1fr; }
+            .work-description { grid-column: 1 / -1; }
         }
     </style>
 </head>
@@ -241,11 +249,17 @@
             </div>
             <div class="form-group">
                 <label for="overtimeStatus">Mesai durumu</label>
-                <select id="overtimeStatus">
+                <!-- onchange eklendi -->
+                <select id="overtimeStatus" onchange="toggleOvertimeInput()">
                     <option value="">Seçim yapın</option>
                     <option value="Mesai yaptım">✅ Mesai yaptım</option>
                     <option value="Mesai yapmadım">❌ Mesai yapmadım</option>
                 </select>
+            </div>
+            <!-- YENİ EKLENEN SAAT KUTUSU -->
+            <div class="form-group" id="overtimeHoursGroup" style="display: none;">
+                <label for="overtimeHours">Kaç Saat?</label>
+                <input type="number" id="overtimeHours" placeholder="Örn: 2" min="1">
             </div>
             <div class="form-group">
                 <label for="workLocation">Çalışma yeri</label>
@@ -321,7 +335,7 @@
             location.reload();
         }
 
-        // API İstek Fonksiyonu (Otomatik kullanıcı filtresiyle çalışır)
+        // API İstek Fonksiyonu
         async function supabaseRequest(endpoint, method = 'GET', data = null) {
             const options = {
                 method: method,
@@ -394,39 +408,69 @@
             this.value = val;
         });
 
-        // --- İŞ TAKİBİ ---
+        // --- İŞ TAKİBİ VE YENİ MESAİ MANTIĞI ---
+        
+        // Yeni: Saati Göster/Gizle Fonksiyonu
+        function toggleOvertimeInput() {
+            const status = document.getElementById('overtimeStatus').value;
+            const hoursGroup = document.getElementById('overtimeHoursGroup');
+            if (status === 'Mesai yaptım') {
+                hoursGroup.style.display = 'block';
+                document.getElementById('overtimeHours').focus();
+            } else {
+                hoursGroup.style.display = 'none';
+                document.getElementById('overtimeHours').value = '';
+            }
+        }
+
         async function saveWorkTracking() {
             const date = document.getElementById('workTrackingDate').value;
             const attendance = document.getElementById('attendanceStatus').value;
             const overtime = document.getElementById('overtimeStatus').value;
+            let overtime_hours = document.getElementById('overtimeHours').value.trim(); // Yeni saat verisi
             const location = document.getElementById('workLocation').value;
             const description = document.getElementById('workDescription').value.trim();
 
             if (!date || !attendance || !overtime || !location) return alert('Tarih, işe gelme, mesai ve konum zorunludur.');
+            
+            // Saat kontrolü
+            if (overtime === 'Mesai yaptım' && !overtime_hours) return alert('Lütfen kaç saat mesai yaptığınızı girin.');
+            if (overtime !== 'Mesai yaptım') overtime_hours = null;
 
             const existingIndex = workTrackingRecords.findIndex(item => item.date === date);
             let record;
 
             if (existingIndex >= 0) {
-                record = { ...workTrackingRecords[existingIndex], attendance, overtime, location, description };
+                // Saat verisini de objeye ekledik
+                record = { ...workTrackingRecords[existingIndex], attendance, overtime, overtime_hours, location, description };
                 workTrackingRecords[existingIndex] = record;
                 renderWorkTrackingRecords();
                 await supabaseRequest(`work_tracking?id=eq.${record.id}`, 'PATCH', record);
             } else {
-                record = { id: Date.now(), date, attendance, overtime, location, description };
+                // Saat verisini de objeye ekledik
+                record = { id: Date.now(), date, attendance, overtime, overtime_hours, location, description };
                 workTrackingRecords.unshift(record);
                 renderWorkTrackingRecords();
                 await supabaseRequest('work_tracking', 'POST', record);
             }
 
             document.getElementById('workDescription').value = '';
+            document.getElementById('overtimeHours').value = ''; // Kutuyu temizle
+            toggleOvertimeInput(); // Gizle
             renderWorkTrackingSummary(record);
         }
 
         function renderWorkTrackingSummary(record) {
             const summary = document.getElementById('workTrackingSummary');
             if (!record) { summary.classList.remove('visible'); return; }
-            summary.innerHTML = `<i class="ph ph-check-circle"></i><span><strong>${formatDetailedDate(record.date)}</strong> için kaydedildi: ${record.attendance} · ${record.overtime} · ${record.location}</span>`;
+            
+            // Özette saati de gösterelim
+            let otText = record.overtime;
+            if(record.overtime === 'Mesai yaptım' && record.overtime_hours) {
+                otText += ` (${record.overtime_hours} Saat)`;
+            }
+
+            summary.innerHTML = `<i class="ph ph-check-circle"></i><span><strong>${formatDetailedDate(record.date)}</strong> için kaydedildi: ${record.attendance} · ${otText} · ${record.location}</span>`;
             summary.classList.add('visible');
         }
 
@@ -436,6 +480,11 @@
             document.getElementById('workTrackingDate')._flatpickr.setDate(record.date, true, 'd.m.Y');
             document.getElementById('attendanceStatus').value = record.attendance;
             document.getElementById('overtimeStatus').value = record.overtime;
+            
+            // Düzenlerken saat kutusunu doldur ve göster
+            document.getElementById('overtimeHours').value = record.overtime_hours || '';
+            toggleOvertimeInput();
+
             document.getElementById('workLocation').value = record.location;
             document.getElementById('workDescription').value = record.description || '';
         }
@@ -461,7 +510,15 @@
                 .sort((a, b) => parseDate(b.record.date) - parseDate(a.record.date));
             
             const attIcon = val => val === 'İşe geldim' ? '<span class="tracking-icon yes">✓</span>' : val === 'İzinliyim' ? '<span class="tracking-icon leave">−</span>' : '<span class="tracking-icon no">✕</span>';
-            const ovIcon = val => val === 'Mesai yaptım' ? '<span class="tracking-icon yes">✓</span>' : '<span class="tracking-icon no">✕</span>';
+            
+            // Yeni Rozet Mantığı
+            const ovIcon = (val, hours) => {
+                if (val === 'Mesai yaptım') {
+                    return hours ? `<span class="tracking-icon yes hours">✓ ${hours} Saat</span>` : '<span class="tracking-icon yes">✓</span>';
+                }
+                return '<span class="tracking-icon no">✕</span>';
+            };
+
             const locIcon = val => ({ Merkez: '🏢', İvedik: '🏭', Saha: '🦺', Uzaktan: '🏠' }[val] || '📍');
 
             let currentMonthYear = "";
@@ -479,7 +536,7 @@
                 tableHTML += `<tr>
                     <td class="work-tracking-date">${formatDetailedDate(record.date)}</td>
                     <td>${attIcon(record.attendance)}</td>
-                    <td>${ovIcon(record.overtime)}</td>
+                    <td>${ovIcon(record.overtime, record.overtime_hours)}</td>
                     <td title="${escapeHtml(record.location)}">${locIcon(record.location)}</td>
                     <td class="tracking-note">${record.description ? `💬 ${escapeHtml(record.description)}` : '—'}</td>
                     <td>
