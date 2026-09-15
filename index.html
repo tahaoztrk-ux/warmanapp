@@ -25,15 +25,8 @@
         body { font-family: 'Inter', sans-serif; background-color: var(--bg); color: var(--text); padding: 2rem; min-height: 100vh; }
         
         /* Auth Ekranı Stilleri */
-        #authOverlay {
-            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-            background: var(--bg); display: flex; align-items: center; justify-content: center;
-            z-index: 10000; padding: 1rem;
-        }
-        .auth-card {
-            background: var(--panel); backdrop-filter: blur(16px); padding: 2.5rem; border-radius: 20px;
-            border: 1px solid var(--border); width: 100%; max-width: 400px; box-shadow: 0 10px 30px rgba(0,0,0,0.1);
-        }
+        #authOverlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: var(--bg); display: flex; align-items: center; justify-content: center; z-index: 10000; padding: 1rem; }
+        .auth-card { background: var(--panel); backdrop-filter: blur(16px); padding: 2.5rem; border-radius: 20px; border: 1px solid var(--border); width: 100%; max-width: 400px; box-shadow: 0 10px 30px rgba(0,0,0,0.1); }
         .auth-card h2 { font-size: 1.5rem; margin-bottom: 1.5rem; text-align: center; display: flex; align-items: center; justify-content: center; gap: 8px; }
         .auth-switch { text-align: center; margin-top: 1rem; font-size: 0.85rem; color: var(--text-muted); cursor: pointer; }
         .auth-switch span { color: var(--primary); font-weight: 650; }
@@ -103,7 +96,6 @@
         .add-subtask-row input { flex: 1; padding: 0.5rem 0.75rem; font-size: 0.8rem; background: var(--bg); border: 1px dashed var(--border); border-radius: 6px; color: var(--text); }
 
         .work-tracking-panel { max-width: 1100px; margin: 2rem auto 0; }
-        /* Yeni saat kutusu sığsın diye gridi ayarladık */
         .work-tracking-form { display: grid; grid-template-columns: 1fr 1fr 1fr 0.8fr 1fr auto; gap: 0.75rem; align-items: end; }
         .work-tracking-form .form-group { margin-bottom: 0; }
         .work-tracking-form .btn-save { width: auto; min-width: 145px; }
@@ -121,7 +113,6 @@
         .tracking-icon.yes { background: rgba(34, 197, 94, 0.13); color: #16a34a; }
         .tracking-icon.no { background: rgba(239, 68, 68, 0.13); color: #dc2626; }
         .tracking-icon.leave { background: rgba(245, 158, 11, 0.13); color: #d97706; }
-        /* Yeni saat rozeti CSS'i */
         .tracking-icon.hours { width: auto; padding: 0 10px; border-radius: 15px; font-weight: 700; font-size: 0.85rem; }
         .tracking-note { max-width: 250px; color: var(--text-muted); }
         .tracking-action { border: 0; background: transparent; cursor: pointer; font-size: 1.1rem; color: var(--text-muted); }
@@ -129,15 +120,28 @@
         .tracking-action.delete:hover { color: var(--danger); }
         .work-tracking-empty { color: var(--text-muted); font-size: 0.9rem; padding: 0.75rem 0; text-align: center; }
 
-        #loadingOverlay {
-            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-            background: var(--bg); display: flex; align-items: center; justify-content: center;
-            z-index: 9999; color: var(--primary); font-size: 1.5rem; transition: opacity 0.3s;
-        }
+        #loadingOverlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: var(--bg); display: flex; align-items: center; justify-content: center; z-index: 9999; color: var(--primary); font-size: 1.5rem; transition: opacity 0.3s; }
         
+        /* Modal Stilleri */
+        .modal-overlay { position: fixed; top:0; left:0; width:100%; height:100%; background: rgba(0,0,0,0.5); z-index: 10001; display:flex; align-items:center; justify-content:center; backdrop-filter: blur(4px); }
+        .modal-content { background: var(--panel); padding: 2rem; border-radius: 16px; min-width: 380px; max-width: 95%; color: var(--text); border: 1px solid var(--border); box-shadow: 0 15px 40px rgba(0,0,0,0.2); }
+        .stat-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-top: 1.5rem; }
+        .stat-box { background: var(--bg); padding: 1.2rem; border-radius: 12px; text-align: center; border: 1px solid var(--border); box-shadow: inset 0 2px 4px rgba(0,0,0,0.02); }
+        .stat-box.green { border-bottom: 3px solid #22c55e; }
+        .stat-box.green .stat-num { color: #16a34a; }
+        .stat-box.red { border-bottom: 3px solid #ef4444; }
+        .stat-box.red .stat-num { color: #dc2626; }
+        .stat-box.blue { border-bottom: 3px solid #3b82f6; }
+        .stat-box.blue .stat-num { color: #2563eb; }
+        .stat-box.yellow { border-bottom: 3px solid #f59e0b; }
+        .stat-box.yellow .stat-num { color: #d97706; }
+        .stat-title { font-size: 0.85rem; color: var(--text-muted); font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; }
+        .stat-num { font-size: 2rem; font-weight: 800; display: block; margin-top: 5px; }
+
         @media (max-width: 900px) {
             .work-tracking-form { grid-template-columns: 1fr 1fr; }
             .work-description { grid-column: 1 / -1; }
+            .panel-header-row { flex-direction: column; align-items: flex-start !important; gap: 10px; }
         }
     </style>
 </head>
@@ -231,8 +235,26 @@
         </div>
     </div>
 
+    <!-- İŞ TAKİBİ PANELİ VE YENİ BUTONLAR -->
     <section class="panel work-tracking-panel">
-        <h2><i class="ph ph-briefcase"></i> İş Takibi</h2>
+        <div class="panel-header-row" style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 1.5rem; border-bottom: 1px solid var(--border); padding-bottom: 0.8rem;">
+            <h2 style="margin:0; border:none; padding:0;"><i class="ph ph-briefcase"></i> İş Takibi</h2>
+            <div style="display:flex; gap:10px; align-items:center; flex-wrap: wrap;">
+                <!-- Arşiv Seçici -->
+                <select id="viewArchiveSelect" onchange="changeArchiveView()" style="padding: 0.5rem; font-size:0.85rem; width:auto; border-radius:8px; font-weight:600; cursor:pointer;">
+                    <option value="active">Güncel Dönem</option>
+                </select>
+                <!-- İstatistik Butonu -->
+                <button class="btn-save" style="padding: 0.5rem 1rem; font-size: 0.85rem; width:auto; background: #3b82f6;" onclick="showStatistics()">
+                    <i class="ph ph-chart-bar"></i> İstatistik
+                </button>
+                <!-- Maaş Tamam (Arşivle) Butonu -->
+                <button class="btn-save" style="padding: 0.5rem 1rem; font-size: 0.85rem; width:auto; background: #ef4444;" onclick="archiveCurrentMonth()">
+                    <i class="ph ph-archive"></i> Maaşı Kapat (Log)
+                </button>
+            </div>
+        </div>
+
         <div class="work-tracking-form">
             <div class="form-group">
                 <label for="workTrackingDate">Tarih</label>
@@ -249,14 +271,12 @@
             </div>
             <div class="form-group">
                 <label for="overtimeStatus">Mesai durumu</label>
-                <!-- onchange eklendi -->
                 <select id="overtimeStatus" onchange="toggleOvertimeInput()">
                     <option value="">Seçim yapın</option>
                     <option value="Mesai yaptım">✅ Mesai yaptım</option>
                     <option value="Mesai yapmadım">❌ Mesai yapmadım</option>
                 </select>
             </div>
-            <!-- YENİ EKLENEN SAAT KUTUSU -->
             <div class="form-group" id="overtimeHoursGroup" style="display: none;">
                 <label for="overtimeHours">Kaç Saat?</label>
                 <input type="number" id="overtimeHours" placeholder="Örn: 2" min="1">
@@ -282,6 +302,19 @@
         <div class="work-tracking-list" id="workTrackingList"></div>
     </section>
 
+    <!-- İSTATİSTİK MODAL PENCERESİ -->
+    <div id="statsModal" class="modal-overlay" style="display:none;">
+        <div class="modal-content">
+            <div style="display:flex; justify-content:space-between; align-items:center; border-bottom: 1px solid var(--border); padding-bottom: 1rem;">
+                <h3 style="margin:0; display:flex; align-items:center; gap:8px;"><i class="ph-fill ph-chart-pie-slice" style="color:var(--primary);"></i> Dönem İstatistikleri</h3>
+                <button onclick="closeStatistics()" style="background:transparent; border:none; font-size:1.8rem; cursor:pointer; color:var(--text-muted);">&times;</button>
+            </div>
+            <div id="statsContent" class="stat-grid">
+                <!-- Javascript ile doldurulacak -->
+            </div>
+        </div>
+    </div>
+
     <script>
         const SUPABASE_URL = 'https://gpdvqhdhbreiqazlvwlh.supabase.co';
         const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImdwZHZxaGRoYnJlaXFhemx2d2xoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODkzNTkxMzYsImV4cCI6MjEwNDkzNTEzNn0.vfqPZuGNIwch5MjxDAeCAxCzkIplC3JFbXvdQAGBE58';
@@ -290,7 +323,8 @@
 
         let tasks = [];
         let assignments = [];
-        let workTrackingRecords = [];
+        let allWorkTrackingRecords = []; // Bütün verileri burada tutacağız
+        let currentArchiveView = 'active'; // active = Güncel Dönem, yoksa Log Adı
         let currentSubtasks = [];
         let isSignUpMode = false;
         const aylar = ["Ocak", "Şubat", "Mart", "Nisan", "Mayıs", "Haziran", "Temmuz", "Ağustos", "Eylül", "Ekim", "Kasım", "Aralık"];
@@ -364,10 +398,12 @@
 
                 tasks = (pData || []).map(p => ({ ...p, subtasks: JSON.parse(p.subtasks_json || '[]') }));
                 assignments = (aData || []).map(a => ({ ...a, subtasks: JSON.parse(a.subtasks_json || '[]') }));
-                workTrackingRecords = wData || [];
+                allWorkTrackingRecords = wData || [];
 
-                renderTasks(); renderAssignments(); renderWorkTrackingRecords();
-                if(workTrackingRecords.length > 0) renderWorkTrackingSummary(workTrackingRecords[0]);
+                renderTasks(); 
+                renderAssignments(); 
+                populateArchiveDropdown();
+                renderWorkTrackingRecords();
                 
                 document.getElementById('loadingOverlay').style.opacity = '0';
                 setTimeout(() => document.getElementById('loadingOverlay').style.display = 'none', 300);
@@ -408,9 +444,94 @@
             this.value = val;
         });
 
-        // --- İŞ TAKİBİ VE YENİ MESAİ MANTIĞI ---
+        // --- İŞ TAKİBİ ARŞİV VE İSTATİSTİK ---
         
-        // Yeni: Saati Göster/Gizle Fonksiyonu
+        function populateArchiveDropdown() {
+            const select = document.getElementById('viewArchiveSelect');
+            const archives = [...new Set(allWorkTrackingRecords.map(r => r.archive_id).filter(Boolean))];
+            
+            let optionsHTML = `<option value="active">Güncel Dönem</option>`;
+            archives.forEach(arc => {
+                optionsHTML += `<option value="${arc}">📁 ${arc}</option>`;
+            });
+            select.innerHTML = optionsHTML;
+            select.value = currentArchiveView;
+        }
+
+        function changeArchiveView() {
+            currentArchiveView = document.getElementById('viewArchiveSelect').value;
+            renderWorkTrackingRecords();
+        }
+
+        function showStatistics() {
+            // Ekranda seçili olan dönemin kayıtlarını al
+            const recordsToStat = allWorkTrackingRecords.filter(r => currentArchiveView === 'active' ? !r.archive_id : r.archive_id === currentArchiveView);
+            
+            let geldi = 0, gelmedi = 0, izinli = 0, mesaiSaat = 0;
+            
+            recordsToStat.forEach(r => {
+                if(r.attendance === 'İşe geldim') geldi++;
+                if(r.attendance === 'Gelmedim') gelmedi++;
+                if(r.attendance === 'İzinliyim') izinli++;
+                if(r.overtime === 'Mesai yaptım' && r.overtime_hours) {
+                    mesaiSaat += parseInt(r.overtime_hours) || 0;
+                }
+            });
+
+            document.getElementById('statsContent').innerHTML = `
+                <div class="stat-box green">
+                    <span class="stat-title">İşe Geldi</span>
+                    <span class="stat-num">${geldi} Gün</span>
+                </div>
+                <div class="stat-box blue">
+                    <span class="stat-title">Toplam Mesai</span>
+                    <span class="stat-num">${mesaiSaat} Saat</span>
+                </div>
+                <div class="stat-box yellow">
+                    <span class="stat-title">İzinli</span>
+                    <span class="stat-num">${izinli} Gün</span>
+                </div>
+                <div class="stat-box red">
+                    <span class="stat-title">Gelmedi</span>
+                    <span class="stat-num">${gelmedi} Gün</span>
+                </div>
+            `;
+            document.getElementById('statsModal').style.display = 'flex';
+        }
+
+        function closeStatistics() {
+            document.getElementById('statsModal').style.display = 'none';
+        }
+
+        async function archiveCurrentMonth() {
+            if(currentArchiveView !== 'active') {
+                return alert('Hata: Sadece Güncel Dönemi (Aktif Ayı) arşivleyebilirsiniz.');
+            }
+            
+            const activeRecords = allWorkTrackingRecords.filter(r => !r.archive_id);
+            if(activeRecords.length === 0) {
+                return alert('Arşivlenecek güncel kayıt bulunamadı. Zaten temiz bir sayfadasınız.');
+            }
+
+            const archiveName = prompt("Bu dönemi (ayı) kapatıp log olarak arşive kaldırmak istiyor musunuz?\n\nLütfen arşiv adı girin (Örn: 1. Ay Log, Eylül 2026):");
+            if(!archiveName || archiveName.trim() === '') return;
+
+            // Supabase Toplu Güncelleme (REST API Filtresi ile)
+            await supabaseRequest('work_tracking?archive_id=is.null', 'PATCH', { archive_id: archiveName.trim() });
+            
+            // Lokalde de kaydet
+            allWorkTrackingRecords.forEach(r => {
+                if(!r.archive_id) r.archive_id = archiveName.trim();
+            });
+
+            alert(`Dönem başarıyla "${archiveName}" olarak kapatıldı!\nArtık yepyeni bir maaş dönemine temiz başlayabilirsiniz.`);
+            
+            // Menüyü güncelle ve temiz sayfaya (Güncel Dönem'e) dön
+            currentArchiveView = 'active'; 
+            populateArchiveDropdown();
+            renderWorkTrackingRecords();
+        }
+
         function toggleOvertimeInput() {
             const status = document.getElementById('overtimeStatus').value;
             const hoursGroup = document.getElementById('overtimeHoursGroup');
@@ -427,44 +548,44 @@
             const date = document.getElementById('workTrackingDate').value;
             const attendance = document.getElementById('attendanceStatus').value;
             const overtime = document.getElementById('overtimeStatus').value;
-            let overtime_hours = document.getElementById('overtimeHours').value.trim(); // Yeni saat verisi
+            let overtime_hours = document.getElementById('overtimeHours').value.trim(); 
             const location = document.getElementById('workLocation').value;
             const description = document.getElementById('workDescription').value.trim();
 
             if (!date || !attendance || !overtime || !location) return alert('Tarih, işe gelme, mesai ve konum zorunludur.');
-            
-            // Saat kontrolü
             if (overtime === 'Mesai yaptım' && !overtime_hours) return alert('Lütfen kaç saat mesai yaptığınızı girin.');
             if (overtime !== 'Mesai yaptım') overtime_hours = null;
 
-            const existingIndex = workTrackingRecords.findIndex(item => item.date === date);
+            // Hangi döneme kaydediyoruz? Eğer geçmiş döneme bakıyorsak, o geçmiş dönemin adıyla kaydetsin (veya null ise active)
+            const targetArchiveId = currentArchiveView === 'active' ? null : currentArchiveView;
+
+            const existingIndex = allWorkTrackingRecords.findIndex(item => item.date === date && item.archive_id === targetArchiveId);
             let record;
 
             if (existingIndex >= 0) {
-                // Saat verisini de objeye ekledik
-                record = { ...workTrackingRecords[existingIndex], attendance, overtime, overtime_hours, location, description };
-                workTrackingRecords[existingIndex] = record;
+                record = { ...allWorkTrackingRecords[existingIndex], attendance, overtime, overtime_hours, location, description };
+                allWorkTrackingRecords[existingIndex] = record;
                 renderWorkTrackingRecords();
                 await supabaseRequest(`work_tracking?id=eq.${record.id}`, 'PATCH', record);
             } else {
-                // Saat verisini de objeye ekledik
-                record = { id: Date.now(), date, attendance, overtime, overtime_hours, location, description };
-                workTrackingRecords.unshift(record);
+                record = { id: Date.now(), date, attendance, overtime, overtime_hours, location, description, archive_id: targetArchiveId };
+                allWorkTrackingRecords.unshift(record);
                 renderWorkTrackingRecords();
                 await supabaseRequest('work_tracking', 'POST', record);
             }
 
             document.getElementById('workDescription').value = '';
-            document.getElementById('overtimeHours').value = ''; // Kutuyu temizle
-            toggleOvertimeInput(); // Gizle
-            renderWorkTrackingSummary(record);
+            document.getElementById('overtimeHours').value = ''; 
+            toggleOvertimeInput();
+            
+            const currentFilteredRecords = allWorkTrackingRecords.filter(r => currentArchiveView === 'active' ? !r.archive_id : r.archive_id === currentArchiveView);
+            renderWorkTrackingSummary(currentFilteredRecords[0]);
         }
 
         function renderWorkTrackingSummary(record) {
             const summary = document.getElementById('workTrackingSummary');
             if (!record) { summary.classList.remove('visible'); return; }
             
-            // Özette saati de gösterelim
             let otText = record.overtime;
             if(record.overtime === 'Mesai yaptım' && record.overtime_hours) {
                 otText += ` (${record.overtime_hours} Saat)`;
@@ -474,14 +595,13 @@
             summary.classList.add('visible');
         }
 
-        function editWorkTracking(index) {
-            const record = workTrackingRecords[index];
+        function editWorkTracking(originalId) {
+            const record = allWorkTrackingRecords.find(r => r.id === originalId);
             if (!record) return;
             document.getElementById('workTrackingDate')._flatpickr.setDate(record.date, true, 'd.m.Y');
             document.getElementById('attendanceStatus').value = record.attendance;
             document.getElementById('overtimeStatus').value = record.overtime;
             
-            // Düzenlerken saat kutusunu doldur ve göster
             document.getElementById('overtimeHours').value = record.overtime_hours || '';
             toggleOvertimeInput();
 
@@ -489,42 +609,53 @@
             document.getElementById('workDescription').value = record.description || '';
         }
 
-        async function deleteWorkTracking(index) {
-            const record = workTrackingRecords[index];
-            if (!record || !confirm(`${formatDetailedDate(record.date)} tarihli kaydı silmek istediğinize emin misiniz?`)) return;
-            workTrackingRecords.splice(index, 1);
+        async function deleteWorkTracking(originalId) {
+            const recordIndex = allWorkTrackingRecords.findIndex(r => r.id === originalId);
+            if (recordIndex === -1) return;
+            const record = allWorkTrackingRecords[recordIndex];
+            
+            if (!confirm(`${formatDetailedDate(record.date)} tarihli kaydı silmek istediğinize emin misiniz?`)) return;
+            
+            allWorkTrackingRecords.splice(recordIndex, 1);
             renderWorkTrackingRecords();
-            renderWorkTrackingSummary(workTrackingRecords[0]);
+            
+            const currentFilteredRecords = allWorkTrackingRecords.filter(r => currentArchiveView === 'active' ? !r.archive_id : r.archive_id === currentArchiveView);
+            renderWorkTrackingSummary(currentFilteredRecords[0]);
+            
             await supabaseRequest(`work_tracking?id=eq.${record.id}`, 'DELETE');
         }
         
         function renderWorkTrackingRecords() {
             const list = document.getElementById('workTrackingList');
-            if (workTrackingRecords.length === 0) {
-                list.innerHTML = '<p class="work-tracking-empty">Henüz iş takibi kaydı yok.</p>';
+            
+            // SADECE SEÇİLİ DÖNEMİ FİLTRELE
+            const filteredRecords = allWorkTrackingRecords.filter(r => currentArchiveView === 'active' ? !r.archive_id : r.archive_id === currentArchiveView);
+
+            if (filteredRecords.length === 0) {
+                if(currentArchiveView === 'active') {
+                    list.innerHTML = '<p class="work-tracking-empty">Yeni dönem (maaş ayı) temiz. Henüz kayıt yok!</p>';
+                } else {
+                    list.innerHTML = '<p class="work-tracking-empty">Bu arşivde kayıt bulunamadı.</p>';
+                }
                 return;
             }
 
             const parseDate = val => { const [d,m,y] = val.split('.'); return new Date(`${y}-${m}-${d}`); };
-            const orderedRecords = workTrackingRecords.map((record, index) => ({ record, originalIndex: index }))
-                .sort((a, b) => parseDate(b.record.date) - parseDate(a.record.date));
+            const orderedRecords = filteredRecords.sort((a, b) => parseDate(b.date) - parseDate(a.date));
             
             const attIcon = val => val === 'İşe geldim' ? '<span class="tracking-icon yes">✓</span>' : val === 'İzinliyim' ? '<span class="tracking-icon leave">−</span>' : '<span class="tracking-icon no">✕</span>';
-            
-            // Yeni Rozet Mantığı
             const ovIcon = (val, hours) => {
                 if (val === 'Mesai yaptım') {
                     return hours ? `<span class="tracking-icon yes hours">✓ ${hours} Saat</span>` : '<span class="tracking-icon yes">✓</span>';
                 }
                 return '<span class="tracking-icon no">✕</span>';
             };
-
             const locIcon = val => ({ Merkez: '🏢', İvedik: '🏭', Saha: '🦺', Uzaktan: '🏠' }[val] || '📍');
 
             let currentMonthYear = "";
             let tableHTML = `<table class="work-tracking-table"><thead><tr><th>Tarih</th><th>Geldi</th><th>Mesai</th><th>Konum</th><th>Açıklama</th><th>İşlem</th></tr></thead><tbody>`;
 
-            orderedRecords.forEach(({ record, originalIndex }) => {
+            orderedRecords.forEach(record => {
                 const [day, month, year] = record.date.split('.');
                 const recordMonthYear = `${aylar[parseInt(month) - 1]} ${year}`;
 
@@ -540,8 +671,8 @@
                     <td title="${escapeHtml(record.location)}">${locIcon(record.location)}</td>
                     <td class="tracking-note">${record.description ? `💬 ${escapeHtml(record.description)}` : '—'}</td>
                     <td>
-                        <button class="tracking-action" onclick="editWorkTracking(${originalIndex})" title="Düzenle"><i class="ph ph-pencil-simple"></i></button>
-                        <button class="tracking-action delete" onclick="deleteWorkTracking(${originalIndex})" title="Sil"><i class="ph ph-trash"></i></button>
+                        <button class="tracking-action" onclick="editWorkTracking(${record.id})" title="Düzenle"><i class="ph ph-pencil-simple"></i></button>
+                        <button class="tracking-action delete" onclick="deleteWorkTracking(${record.id})" title="Sil"><i class="ph ph-trash"></i></button>
                     </td>
                 </tr>`;
             });
