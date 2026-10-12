@@ -1,0 +1,12 @@
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+service-role*
+Thumbs.db
+.DS_Store
+node_modules/
+.vscode/
+.idea/
+*.log

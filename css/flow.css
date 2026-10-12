@@ -1,0 +1,58 @@
+.flow-shell {
+  height: calc(100vh - var(--topbar-h) - 44px);
+  display: grid;
+  grid-template-columns: 220px 1fr 320px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  overflow: hidden;
+  background: var(--surface);
+}
+.flow-shell.wide { grid-template-columns: 0 1fr 0; }
+.flow-palette, .flow-inspect {
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+  padding: 14px;
+  overflow: auto;
+}
+.flow-inspect { border-right: 0; border-left: 1px solid var(--border); }
+.flow-palette h3, .flow-inspect h3 { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--text-soft); margin-bottom: 10px; }
+.drag-item {
+  border: 1px dashed var(--border); border-radius: 10px; padding: 10px;
+  display: flex; gap: 8px; align-items: center; font-weight: 600; font-size: 13px; margin-bottom: 8px; cursor: grab;
+}
+.drag-item:hover { border-color: var(--primary); color: var(--primary); background: var(--primary-soft); }
+.flow-canvas { position: relative; min-width: 0; background: var(--surface-2); }
+#drawflow {
+  width: 100%; height: 100%;
+  background-image: radial-gradient(var(--border) 1.4px, transparent 1.4px);
+  background-size: 22px 22px;
+}
+.flow-tools {
+  position: absolute; right: 12px; bottom: 12px; display: flex; gap: 6px; z-index: 5;
+}
+.flow-status {
+  position: absolute; left: 12px; top: 12px; z-index: 5;
+  display: flex; align-items: center; gap: 8px;
+  background: var(--surface); border: 1px solid var(--border); border-radius: 999px; padding: 6px 10px; font-size: 12px;
+}
+
+.drawflow .drawflow-node {
+  background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
+  color: var(--text); width: 250px; padding: 0; box-shadow: var(--shadow-sm);
+}
+.drawflow .drawflow-node.selected { border-color: var(--primary) !important; box-shadow: 0 0 0 4px var(--primary-soft) !important; }
+.node-header { padding: 10px 12px; border-bottom: 1px solid var(--border); font-weight: 700; font-size: 13px; display: flex; align-items: center; gap: 8px; }
+.node-content { padding: 12px; font-size: 13px; color: var(--text-muted); }
+.node-title { font-weight: 650; color: var(--text); margin-bottom: 4px; }
+.drawflow .drawflow-node.node-done { border-color: var(--success) !important; }
+.drawflow .drawflow-node.node-blocked { border-color: var(--danger) !important; }
+.drawflow .drawflow-node.node-progress { border-color: var(--info) !important; }
+.drawflow .connection .main-path { stroke-width: 3px; }
+.drawflow .connection.path-done .main-path { stroke: var(--success) !important; }
+
+@media (max-width: 980px) {
+  .flow-shell { grid-template-columns: 1fr; height: calc(100vh - 130px); }
+  .flow-palette, .flow-inspect { display: none; }
+  .flow-shell.show-palette .flow-palette, .flow-shell.show-inspect .flow-inspect { display: block; position: absolute; inset: 0 auto 0 0; width: min(280px, 90vw); z-index: 6; }
+  .flow-shell.show-inspect .flow-inspect { left: auto; right: 0; }
+}

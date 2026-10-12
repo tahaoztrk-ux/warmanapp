@@ -1,0 +1,157 @@
+#authScreen, #bootScreen {
+  position: fixed; inset: 0; z-index: 80;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--bg);
+}
+#bootScreen { gap: 12px; color: var(--primary); font-weight: 600; }
+#bootScreen i { font-size: 28px; }
+
+.auth-card {
+  width: min(420px, calc(100% - 32px));
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  padding: 32px;
+  box-shadow: var(--shadow-md);
+}
+.auth-brand { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+.auth-brand .logo {
+  width: 40px; height: 40px; border-radius: 12px;
+  background: var(--primary); color: #fff;
+  display: grid; place-items: center; font-size: 20px;
+}
+.auth-card h1 { font-size: 22px; letter-spacing: -0.03em; }
+.auth-card p.lead { color: var(--text-muted); margin: 6px 0 22px; }
+.auth-switch { margin-top: 14px; text-align: center; color: var(--text-muted); font-size: 13px; }
+.auth-switch button { background: none; border: 0; color: var(--primary); font-weight: 650; }
+
+#appShell {
+  display: grid;
+  grid-template-columns: var(--sidebar-w) 1fr;
+  height: 100vh;
+  min-width: 0;
+}
+#appShell.collapsed { grid-template-columns: var(--sidebar-collapsed) 1fr; }
+#appShell.detail-open { grid-template-columns: var(--sidebar-w) 1fr var(--detail-w); }
+#appShell.collapsed.detail-open { grid-template-columns: var(--sidebar-collapsed) 1fr var(--detail-w); }
+
+.sidebar {
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+  display: flex; flex-direction: column;
+  padding: 16px 12px;
+  min-height: 0;
+}
+.sidebar-brand {
+  display: flex; align-items: center; gap: 10px;
+  padding: 6px 8px 16px;
+}
+.sidebar-brand .logo {
+  width: 36px; height: 36px; border-radius: 10px; flex-shrink: 0;
+  background: var(--primary); color: #fff; display: grid; place-items: center;
+}
+.sidebar-brand strong { display: block; font-size: 14px; letter-spacing: -0.02em; }
+.sidebar-brand span { color: var(--text-muted); font-size: 11px; }
+.nav-list { display: flex; flex-direction: column; gap: 2px; overflow: auto; }
+.nav-item {
+  display: flex; align-items: center; gap: 10px;
+  padding: 9px 10px; border-radius: 10px;
+  color: var(--text-muted); background: transparent; border: 0;
+  font-weight: 550; font-size: 13.5px; text-align: left; width: 100%;
+}
+.nav-item i { font-size: 18px; width: 20px; text-align: center; flex-shrink: 0; }
+.nav-item:hover { background: var(--surface-2); color: var(--text); }
+.nav-item.active { background: var(--primary-soft); color: var(--primary); }
+.nav-section { margin: 16px 10px 6px; font-size: 11px; font-weight: 700; color: var(--text-soft); letter-spacing: 0.06em; text-transform: uppercase; }
+.sidebar-foot { margin-top: auto; padding-top: 12px; display: flex; flex-direction: column; gap: 4px; }
+
+#appShell.collapsed .sidebar-brand strong,
+#appShell.collapsed .sidebar-brand span,
+#appShell.collapsed .nav-item span,
+#appShell.collapsed .nav-section { display: none; }
+#appShell.collapsed .nav-item { justify-content: center; padding: 10px; }
+#appShell.collapsed .sidebar-brand { justify-content: center; }
+
+.workspace { min-width: 0; display: flex; flex-direction: column; height: 100vh; }
+.topbar {
+  height: var(--topbar-h);
+  display: flex; align-items: center; gap: 10px;
+  padding: 0 18px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+}
+.icon-btn {
+  width: 36px; height: 36px; border-radius: 10px;
+  border: 1px solid var(--border); background: var(--surface-2);
+  display: grid; place-items: center; color: var(--text);
+}
+.icon-btn:hover { border-color: var(--primary); color: var(--primary); }
+.search-wrap { flex: 1; max-width: 520px; position: relative; }
+.search-wrap i { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: var(--text-soft); }
+.search-wrap input {
+  width: 100%; height: 38px; border-radius: 10px;
+  border: 1px solid var(--border); background: var(--surface-2);
+  padding: 0 12px 0 36px; outline: none;
+}
+.search-wrap input:focus { border-color: var(--primary); background: var(--surface); box-shadow: var(--focus); }
+.topbar-actions { margin-left: auto; display: flex; align-items: center; gap: 8px; }
+.user-chip {
+  display: flex; align-items: center; gap: 8px;
+  border: 1px solid var(--border); background: var(--surface-2);
+  border-radius: 999px; padding: 4px 10px 4px 4px; font-size: 12px; font-weight: 600;
+}
+.user-chip .avatar {
+  width: 26px; height: 26px; border-radius: 50%;
+  background: var(--primary-soft); color: var(--primary);
+  display: grid; place-items: center; font-size: 12px;
+}
+
+#view { flex: 1; overflow: auto; padding: 22px; min-height: 0; }
+.view-head {
+  display: flex; align-items: flex-start; justify-content: space-between;
+  gap: 16px; margin-bottom: 20px; flex-wrap: wrap;
+}
+.view-head h1 { font-size: 24px; letter-spacing: -0.03em; }
+.view-head p { color: var(--text-muted); margin-top: 4px; }
+.view-actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+
+.detail-panel {
+  background: var(--surface);
+  border-left: 1px solid var(--border);
+  display: none; flex-direction: column;
+  min-height: 0; overflow: auto;
+}
+#appShell.detail-open .detail-panel { display: flex; }
+.detail-head {
+  position: sticky; top: 0; background: var(--surface);
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 14px 16px; border-bottom: 1px solid var(--border); z-index: 2;
+}
+.detail-body { padding: 16px; display: flex; flex-direction: column; gap: 14px; }
+
+.mobile-backdrop {
+  display: none; position: fixed; inset: 0; background: rgba(15,23,42,.45); z-index: 40;
+}
+
+@media (max-width: 1100px) {
+  #appShell, #appShell.collapsed, #appShell.detail-open, #appShell.collapsed.detail-open {
+    grid-template-columns: 1fr;
+  }
+  .sidebar {
+    position: fixed; inset: 0 auto 0 0; width: min(280px, 86vw); z-index: 50;
+    transform: translateX(-105%); transition: transform .2s ease;
+  }
+  body.nav-open .sidebar { transform: none; }
+  body.nav-open .mobile-backdrop { display: block; }
+  #appShell.detail-open .detail-panel {
+    position: fixed; inset: 0 0 0 auto; width: min(420px, 100vw); z-index: 55;
+    display: flex; box-shadow: var(--shadow-md);
+  }
+  .search-wrap { max-width: none; }
+}
+
+@media (max-width: 720px) {
+  #view { padding: 14px; }
+  .topbar { padding: 0 10px; }
+  .user-chip span, .quick-add-label { display: none; }
+}
