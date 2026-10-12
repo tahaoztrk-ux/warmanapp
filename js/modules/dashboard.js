@@ -4,12 +4,10 @@ window.Warman = window.Warman || {};
 
   function render(view) {
     const st = Warman.store.get();
-    const tasks = st.tasks.filter((t) => !t.archived);
-    const projects = st.projects.filter((p) => p.status !== "archived");
+    const tasks = (st.tasks || []).filter((t) => !t.archived);
+    const projects = (st.projects || []).filter((p) => p.status !== "archived");
     const today = U().todayStr();
-    const month = today.slice(3);
-    const workMonth = st.work.filter((w) => !w.archive_id && (w.date || "").endsWith(month) || (!w.archive_id && (w.date || "").slice(3) === month));
-    const activeWork = st.work.filter((w) => !w.archive_id);
+    const activeWork = (st.work || []).filter((w) => !w.archive_id);
     const overtime = activeWork.reduce((s, r) => s + (r.overtime === "Mesai yaptım" ? U().parseHours(r.overtime_hours) : 0), 0);
     const todayTasks = tasks.filter((t) => t.due_date === today && t.status !== "cancelled");
     const overdue = tasks.filter(U().isOverdue);

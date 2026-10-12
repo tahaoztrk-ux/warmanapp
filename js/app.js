@@ -19,19 +19,25 @@ window.Warman = window.Warman || {};
     const email = session.user.email || "";
     document.getElementById("userEmail").textContent = email;
     document.getElementById("userAvatar").textContent = Warman.utils.initials(email);
+    document.getElementById("bootScreen").style.display = "none";
+    Warman.ui.bindChrome();
     try {
       const data = await Warman.api.loadAll();
-      Warman.store.set({ projects: data.projects, tasks: data.tasks, work: data.work, loading: false });
-      document.getElementById("bootScreen").style.display = "none";
-      Warman.ui.bindChrome();
-      Warman.router.start();
-      scheduleReminders();
+      Warman.store.set({
+        projects: data.projects || [],
+        tasks: data.tasks || [],
+        work: data.work || [],
+        loading: false
+      });
+      if (data.errors && data.errors.length) {
+        Warman.ui.toast("Bazı veriler yüklenemedi: " + data.errors.join(" · "), "error");
+      }
     } catch (err) {
-      document.getElementById("bootScreen").style.display = "none";
-      Warman.ui.toast("Veriler yüklenemedi: " + err.message, "error");
-      Warman.ui.bindChrome();
-      Warman.router.start();
+      Warman.store.set({ projects: [], tasks: [], work: [], loading: false });
+      Warman.ui.toast("Veriler yüklenemedi: " + (err.message || "Bilinmeyen hata"), "error");
     }
+    Warman.router.start();
+    scheduleReminders();
   }
 
   function scheduleReminders() {

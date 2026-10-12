@@ -80,17 +80,24 @@ window.Warman = window.Warman || {};
   }
 
   function parseEnvelope(raw) {
-    try {
-      const parsed = JSON.parse(raw || "[]");
-      if (Array.isArray(parsed)) return { items: parsed, meta: {} };
-      if (parsed && typeof parsed === "object") {
-        return {
-          items: Array.isArray(parsed.items) ? parsed.items : [],
-          meta: parsed.meta && typeof parsed.meta === "object" ? parsed.meta : {}
-        };
-      }
-    } catch (e) { /* keep empty */ }
+    if (raw == null || raw === "") return { items: [], meta: {} };
+    let parsed = raw;
+    if (typeof parsed === "string") {
+      try { parsed = JSON.parse(parsed); }
+      catch (e) { return { items: [], meta: {} }; }
+    }
+    if (Array.isArray(parsed)) return { items: parsed, meta: {} };
+    if (parsed && typeof parsed === "object") {
+      return {
+        items: Array.isArray(parsed.items) ? parsed.items : [],
+        meta: parsed.meta && typeof parsed.meta === "object" ? parsed.meta : {}
+      };
+    }
     return { items: [], meta: {} };
+  }
+
+  function asArray(value) {
+    return Array.isArray(value) ? value : [];
   }
 
   function encodeEnvelope(items, meta) {
@@ -184,7 +191,7 @@ window.Warman = window.Warman || {};
   }
 
   Warman.utils = {
-    MONTHS, escapeHtml, uid, todayStr, toDotDate, parseDotDate, addDays,
+    MONTHS, escapeHtml, uid, todayStr, toDotDate, parseDotDate, addDays, asArray,
     formatDetailedDate, formatShortDate, isToday, isOverdue, parseHours, formatHours,
     parseEnvelope, encodeEnvelope, statusLabel, priorityLabel, projectStatusLabel,
     parseNaturalTask, sortTasks, download, csvEscape, debounce, initials

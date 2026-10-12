@@ -9,8 +9,25 @@ window.Warman = window.Warman || {};
   }
 
   async function token() {
-    const { data } = await client.auth.getSession();
-    return data.session?.access_token || null;
+    let { data } = await client.auth.getSession();
+    let session = data.session;
+    if (session?.expires_at && session.expires_at * 1000 < Date.now() + 20000) {
+      const refreshed = await client.auth.refreshSession();
+      session = refreshed.data.session;
+    }
+    return session?.access_token || null;
+  }
+
+  function asRows(value) {
+    return Array.isArray(value) ? value : [];
+  }
+
+  async function loadTable(name) {
+    const first = await client.from(name).select("*").order("id", { ascending: false });
+    if (!first.error) return asRows(first.data);
+    const retry = await client.from(name).select("*");
+    if (retry.error) throw new Error((retry.error.message || first.error.message || name) + " yüklenemedi");
+    return asRows(retry.data);
   }
 
   async function request(endpoint, method, data) {
@@ -149,16 +166,31 @@ window.Warman = window.Warman || {};
   }
 
   async function loadAll() {
-    const [pData, aData, wData] = await Promise.all([
-      request("projects?select=*&order=id.desc"),
-      request("assignments?select=*&order=id.desc"),
-      request("work_tracking?select=*&order=id.desc")
-    ]);
-    return {
-      projects: (pData || []).map(normalizeProject),
-      tasks: (aData || []).map(normalizeTask),
-      work: wData || []
+    const errors = [];
+    const safe = async (name, normalize) => {
+      try {
+        const rows = await loadTable(name);
+        return normalize ? rows.map((row) => {
+          try { return normalize(row); }
+          catch (err) {
+            console.error(name, row, err);
+            return null;
+          }
+        }).filter(Boolean) : rows;
+      } catch (err) {
+        errors.push(err.message || name);
+        return [];
+      }
     };
+    const [projects, tasks, work] = await Promise.all([
+      safe("projects", normalizeProject),
+      safe("assignments", normalizeTask),
+      safe("work_tracking")
+    ]);
+    if (errors.length && !projects.length && !tasks.length && !work.length) {
+      throw new Error(errors.join(" · "));
+    }
+    return { projects, tasks, work, errors };
   }
 
   async function saveTask(task) {
