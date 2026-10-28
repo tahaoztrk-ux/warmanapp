@@ -108,16 +108,17 @@ async function run() {
     await page.goto(origin + "/index.html#/work");
     await page.locator("#salaryMonth").fill("2026-10");
     await page.locator("#salaryMonth").dispatchEvent("change");
+    check("schedule and break controls are absent", await page.locator('#wStart,#wEnd,#wBreak,#payStart,#payEnd,#payBreak,input[type="time"]').count() === 0);
+    check("period labels describe days and overtime hours", await page.locator("#view").textContent().then(text => text.includes("Çalışılan gün") && text.includes("Mesai yapılan saat")));
+    check("daily salary uses October calendar days and BES", await page.locator("#dailySalary").textContent().then(text => text.includes("878,49")));
     const saveDay = async (date, description, overtime) => {
       await page.locator("#wDate").fill(date);
       await page.locator("#wDate").dispatchEvent("change");
       if (overtime) {
         await page.locator('[data-k="overtime"][data-v="Mesai yaptım"]').click();
         await page.locator("#wHours").fill(overtime);
-        await page.locator("#wEnd").fill("20:30");
       } else {
         await page.locator('[data-k="overtime"][data-v="Mesai yapmadım"]').click();
-        await page.locator("#wEnd").fill("18:30");
       }
       await page.locator("#wDesc").fill(description);
       await page.locator("#wSave").click();
@@ -126,44 +127,61 @@ async function run() {
     await saveDay("28.10.2026", "Yarım resmi tatil");
     await saveDay("29.10.2026", "Tam resmi tatil");
     await saveDay("27.10.2026", "Normal gün fazla mesai", "2");
+    await saveDay("26.10.2026", "Bin saat mesai kabul edilir", "1000");
     const getSummary = () => page.evaluate(() => Warman.payroll.summarize(Warman.store.get().work, Warman.payroll.defaults(2026), "2026-10"));
     const summary = await getSummary();
-    check("October 28 half and October 29 full holiday add 1.5 daily wages", summary.holidayDays === 1.5 && summary.holidayPay === 1403.78);
-    check("ordinary overtime uses hourly wage times 1.5", summary.overtimeHours === 2 && summary.overtimePay === 374.34);
-    check("monthly total includes base only once", summary.total === 29853.62);
+    check("October daily rate uses 31 calendar days", summary.daysInMonth === 31 && Math.abs(summary.dailyRate - 28075.5 / 31) < 0.001);
+    check("full and half holidays retain their daily wage additions", summary.holidayDays === 1.5 && summary.holidayPay === 1358.49);
+    check("arbitrary 1000 overtime hours are counted without shift limits", summary.overtimeHours === 1002 && Math.abs(summary.overtimePay - 187544.34) < 0.02);
+    check("monthly BES defaults to three percent of selected salary", summary.besDeduction === 842.27);
+    check("accrued salary stops at today and excludes future holiday extras", summary.accruedDays === 28 && summary.accruedTotal < summary.total && summary.accruedHolidayPay === 452.83);
+    const accruedText = await page.locator("#salaryAccrued").textContent();
+    check("accrued salary is prominently displayed", accruedText.includes(summary.accruedTotal.toLocaleString("tr-TR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })));
     await page.reload();
     await page.waitForFunction(() => !Warman.store.get().loading);
-    check("work payroll metadata and descriptions survive reload", await page.evaluate(() => Warman.store.get().work.length === 3 && Warman.store.get().work.every(row => row.payroll?.startTime === "08:30" && row.description)));
+    check("overtime and readable descriptions survive reload", await page.evaluate(() => Warman.store.get().work.length === 4 && Warman.store.get().work.find(row => row.date === "26.10.2026").overtime_hours === "1000"));
     const holidayId = await page.evaluate(() => Warman.store.get().work.find(row => row.date === "29.10.2026").id);
-    await page.locator(`[data-edit="${holidayId}"]`).click();
-    check("edit restores recorded shift", await page.locator("#wEnd").inputValue() === "18:30");
-    await page.locator("#wDesc").fill("Düzenlenen tatil kaydı");
+    const thousandId = await page.evaluate(() => Warman.store.get().work.find(row => row.date === "26.10.2026").id);
+    await page.locator(`[data-edit="${thousandId}"]`).click();
+    check("edit restores unrestricted numeric overtime", await page.locator("#wHours").inputValue() === "1000");
+    await page.locator("#wHours").fill("1001,5");
+    await page.locator("#wDesc").fill("Bin saatin üstünde küsuratlı mesai");
     await page.locator("#wSave").click();
-    await page.waitForFunction(() => Warman.store.get().work.some(row => row.description === "Düzenlenen tatil kaydı"));
-    check("edit updates one record without duplication", await page.evaluate(() => Warman.store.get().work.length === 3));
+    await page.waitForFunction(() => Warman.store.get().work.some(row => row.description === "Bin saatin üstünde küsuratlı mesai"));
+    check("editing fractional overtime above 1000 updates one record", await page.evaluate(() => Warman.store.get().work.length === 4 && Warman.store.get().work.find(row => row.date === "26.10.2026").overtime_hours === "1001.5"));
     await page.locator("#salaryDetails").click();
-    check("period detail opens daily breakdown", await page.locator(".modal-overlay").textContent().then(text => text.includes("28.10.2026") && text.includes("29.10.2026")));
-    const downloadPromise = page.waitForEvent("download");
-    await page.locator("[data-payroll-csv]").click();
-    const download = await downloadPromise;
-    const downloadText = fs.readFileSync(await download.path(), "utf8");
-    check("salary CSV exports summary and recorded days", download.suggestedFilename() === "maas-dokumu-2026-10.csv" && downloadText.includes("Maaş dönemi") && downloadText.includes("29.10.2026"));
+    check("period detail includes daily amounts and BES", await page.locator(".modal-overlay").textContent().then(text => text.includes("28.10.2026") && text.includes("29.10.2026") && text.includes("BES")));
     await page.locator(".modal-overlay [data-x]").click();
+    await page.locator("#exportExcel").click();
+    const csvPromise = page.waitForEvent("download");
+    await page.locator("[data-csv]").click();
+    const csvDownload = await csvPromise;
+    const csvText = fs.readFileSync(await csvDownload.path(), "utf8").replace(/^\uFEFF/, "");
+    const csvRows = csvText.trim().split(/\r?\n/);
+    check("CSV contains only date and overtime hours", csvRows[0] === "Tarih;Mesai saati" && csvRows.every(row => row.split(";").length === 2) && csvText.includes("26.10.2026;1001,5"));
+    await page.locator("#exportExcel").click();
+    const xlsPromise = page.waitForEvent("download");
+    await page.locator("[data-xls]").click();
+    const xlsDownload = await xlsPromise;
+    const xlsText = fs.readFileSync(await xlsDownload.path(), "utf8");
+    check("Excel has exactly two columns with the entered overtime", (xlsText.match(/<th>/g) || []).length === 2 && xlsText.includes("Mesai saati") && xlsText.includes("1001.5"));
     await page.locator(".salary-settings summary").click();
     await page.locator("#payMode").selectOption("custom");
     await page.locator("#paySalary").fill("30000");
+    await page.locator("#payBesRate").fill("0");
     await page.locator("#salarySettingsForm button[type=submit]").click();
-    check("custom monthly salary changes the month total", await page.locator("#salaryTotal").textContent().then(text => text.includes("31.900,00")));
+    check("BES can be disabled and daily amount updates", await page.locator("#dailySalary").textContent().then(text => text.includes("967,74")));
     await page.locator(".salary-settings summary").click();
     await page.locator("#payMode").selectOption("minimum");
     await page.locator("#payBasis").selectOption("gross");
+    await page.locator("#payBesRate").fill("3");
     check("gross minimum wage updates amount input", await page.locator("#paySalary").inputValue() === "33030");
     await page.locator("#salarySettingsForm button[type=submit]").click();
     await page.reload();
     await page.waitForFunction(() => !Warman.store.get().loading);
-    check("salary settings survive reload", await page.evaluate(() => Warman.store.get().settings.payrollMonths["2026-10"].payrollSalaryBasis === "gross"));
+    check("salary and BES settings survive reload", await page.evaluate(() => Warman.store.get().settings.payrollMonths["2026-10"].payrollSalaryBasis === "gross" && Number(Warman.store.get().settings.payrollMonths["2026-10"].payrollBesRate) === 3));
     await page.locator("#nextMonth").click();
-    check("next month starts with independent default salary", await page.locator("#salaryTotal").textContent().then(text => text.includes("28.075,50")));
+    check("future month has zero accrued salary", await page.locator("#salaryAccrued").textContent().then(text => /0,00/.test(text)));
     await page.setViewportSize({ width: 390, height: 844 });
     const mobile = await page.evaluate(() => ({ width: innerWidth, scroll: document.documentElement.scrollWidth,
       cards: [...document.querySelectorAll(".work-quick > .card")].map(el => ({ left: el.getBoundingClientRect().left, right: el.getBoundingClientRect().right })) }));
@@ -174,23 +192,17 @@ async function run() {
       const rows = JSON.parse(localStorage.getItem("qa.table.work_tracking"));
       const index = rows.findIndex(row => row.date === "29.10.2026");
       const record = Warman.api.normalizeWork(rows[index]);
-      record.payroll.breakMinutes = '\"><img id=qa-injected src=x onerror=window.__qaMarkupExecuted=1>';
+      record.payroll.holidayName = '<img id=qa-injected src=x onerror=window.__qaMarkupExecuted=1>';
       rows[index] = Warman.api.serializeWork(record);
       localStorage.setItem("qa.table.work_tracking", JSON.stringify(rows));
     });
+    await page.locator("#salaryMonth").fill("2026-10");
+    await page.locator("#salaryMonth").dispatchEvent("change");
     await page.reload();
     await page.waitForFunction(() => !Warman.store.get().loading);
     check("stored payroll metadata is rendered as literal text", await page.locator(".work-table").textContent().then(text => text.includes("<img id=qa-injected")) && await page.locator("#qa-injected").count() === 0);
     await page.locator(`[data-edit="${holidayId}"]`).click();
     check("editing malformed metadata cannot inject HTML", await page.locator("#qa-injected").count() === 0 && !await page.evaluate(() => window.__qaMarkupExecuted));
-    await page.evaluate(() => {
-      const rows = JSON.parse(localStorage.getItem("qa.table.work_tracking"));
-      const index = rows.findIndex(row => row.date === "29.10.2026");
-      const record = Warman.api.normalizeWork(rows[index]);
-      record.payroll.breakMinutes = 60;
-      rows[index] = Warman.api.serializeWork(record);
-      localStorage.setItem("qa.table.work_tracking", JSON.stringify(rows));
-    });
     await page.reload();
     await page.waitForFunction(() => !Warman.store.get().loading);
     await saveDay("01.11.2026", "Kasım kaydı arşivlenmemeli");
@@ -209,12 +221,12 @@ async function run() {
     page.once("dialog", dialog => dialog.accept("Ekim 2026 test arşivi"));
     await page.locator("#closePeriod").click();
     await page.locator(".modal-overlay [data-yes]").click();
-    await page.waitForFunction(() => Warman.store.get().work.filter(row => row.archive_id).length === 3);
+    await page.waitForFunction(() => Warman.store.get().work.filter(row => row.archive_id).length === 4);
     await page.reload();
     await page.waitForFunction(() => !Warman.store.get().loading);
-    check("closing October archives only its three records after reload", await page.evaluate(() => {
+    check("closing October archives only its four records after reload", await page.evaluate(() => {
       const rows = Warman.store.get().work;
-      return rows.filter(row => row.archive_id === "Ekim 2026 test arşivi" && row.date.endsWith(".10.2026")).length === 3
+      return rows.filter(row => row.archive_id === "Ekim 2026 test arşivi" && row.date.endsWith(".10.2026")).length === 4
         && rows.filter(row => !row.archive_id && row.date.endsWith(".11.2026")).length === 2;
     }));
 

@@ -4,20 +4,21 @@ Görev, proje ve günlük iş takibi. Statik HTML/CSS/JavaScript uygulaması; ve
 
 ## Kayıtlar
 
-Görevler, projeler ve iş kayıtları kimliğe göre upsert edilir. Veritabanı kaydı döndürmeden arayüz başarı bildirmez. Yenilemede veriler oturum açılan hesaptan yeniden yüklenir. İş kaydının vardiya ve tatil bilgileri mevcut `description` alanında sürümlü bir zarfla saklanır; eski düz metin açıklamaları okunmaya devam eder. Yeni sütun veya SQL migrasyonu gerekmez.
+Görevler, projeler ve iş kayıtları kimliğe göre upsert edilir. Veritabanı kaydı döndürmeden arayüz başarı bildirmez. Yenilemede veriler oturum açılan hesaptan yeniden yüklenir. İş kaydının çalışma süresi ve tatil bilgileri mevcut `description` alanında sürümlü bir zarfla saklanır; eski düz metin açıklamaları okunmaya devam eder. Yeni sütun veya SQL migrasyonu gerekmez.
 
 ## Maaş hesabı
 
 - Ay seçimi kayıt listesini, özeti ve dökümü filtreler. Dönemi kapatmak yalnızca seçili ayın güncel kayıtlarını arşivler.
-- Temel ücret tam ay kabul edilir. 2025 ve 2026 için doğrulanmış net/brüt asgari ücretler tanımlıdır; diğer yıllar için özel ücret gerekir.
-- Günlük ücret aylık / 30; saatlik ücret aylık / 225. Fazla mesai girilen saat × saatlik ücret × en az 1,5 katsayısıdır. Haftalık 45 saati aşan süre kullanıcı tarafından girilir; kayıtsız günlerden çalışma süresi çıkarılmaz.
-- Varsayılan vardiya 08.30–18.30, mola 60 dakikadır. Saatler ve mola değiştirilebilir. Giriş/çıkış, fazla mesai dahil gerçek çalışmayı ifade eder.
-- Resmi tatilde çalışma, aylık ücrete ek bir günlük ücret getirir. Yarım gün tatil, 13.00 sonrasında çalışılmışsa ek yarım günlük ücrettir. Normal tatil vardiyası ayrıca fazla mesaiye eklenmez. Tatilde ek mesai için normal vardiyayı aşan süre ve gerçek çıkış saati kaydedilir.
+- 2025 ve 2026 için doğrulanmış net/brüt asgari ücretler tanımlıdır; diğer yıllar için özel ücret gerekir.
+- Günlük ücret, aylık temel ücretin seçili ayın gerçek gün sayısına (28, 29, 30 veya 31) bölünmesiyle hesaplanır. Bugüne kadar biriken temel ücret takvimde geçen günlere göre hesaplanır; yalnızca kayıt girilen günlerin sayısı kullanılmaz. Geçmiş aylar tam ay, gelecek aylar sıfır gün kabul edilir. Gelecek tarihli mesailer bugüne kadar biriken tutara eklenmez.
+- Saatlik mesai ücreti aylık / 225; fazla mesai girilen saat × saatlik ücret × katsayıdır. Mesai süresi doğrudan sayı olarak girilir; 1000 saat gibi büyük değerler dahil günlük veya haftalık üst sınır uygulanmaz. Giriş/çıkış, AM/PM ve mola alanı yoktur; otomatik mola kesilmez.
+- Resmi tatilde çalışma, aylık ücrete ek bir günlük ücret getirir. Yarım gün tatil seçimi ek yarım günlük ücrettir. Girilen mesai saati, vardiya süresine göre sınırlandırılmaz.
+- BES oranı varsayılan %3'tür ve ayarlarla değiştirilebilir ya da sıfırlanabilir. Seçilen temel maaştan açıkça işaretlenen ücretsiz günler düşüldükten sonra belirtilen oranda tahmini kesinti yapılır; mesai/tatil eklerine uygulanmaz. Biriken tutardaki BES de geçen günlere göre hesaplanır.
 - Kayıt girilmeyen günler, ücretli izin ve işaretlenmeyen devamsızlık için kesinti yapılmaz. Yalnızca açıkça seçilen ücretsiz günler düşülür; toplam kesinti aylık temel ücreti aşmaz.
-- Maaş/varsayılan vardiya ayarları hesap ve ay bazında bu tarayıcının yerel depolamasında kalır. Günlük vardiya/tatil bilgileri Supabase'e kaydedilir. JSON yedeği ayarları da içerir.
-- Net hesap tahmindir. Brüt hesapta vergi/SGK kesintileri yapılmaz. İşe giriş/çıkış kıstı ve hafta tatili farklı ücretleri ayrıca hesaplanmaz. Gece yarısını aşan vardiyalar için tatil günleri ayrı kaydedilmelidir.
+- Maaş, BES ve mesai katsayısı ayarları hesap ve ay bazında bu tarayıcının yerel depolamasında kalır. Günlük iş/tatil bilgileri Supabase'e kaydedilir. JSON yedeği ayarları da içerir.
+- Net hesap tahmindir. Brüt hesapta vergi/SGK kesintileri yapılmaz. Gün sayısına göre dağıtım ve BES oranı kullanıcının seçtiği takip hesabıdır; kişisel bordro kesintileri ayrıca hesaplanmaz.
 
-Resmi kaynak bağlantıları uygulamanın maaş dökümünde ve `js/payroll.js` içinde bulunur. CSV/Excel aktarımı günlük ücret ayrıntılarını içerir; maaş dökümü ayrıca CSV olarak indirilebilir.
+Resmi kaynak bağlantıları uygulamanın maaş dökümünde ve `js/payroll.js` içinde bulunur. İş takibi CSV/Excel dosyası yalnızca `Tarih` ve `Mesai saati` sütunlarını içerir; ayrıntılı maaş dökümü ayrıca CSV olarak indirilebilir.
 
 ## Doğrulama
 

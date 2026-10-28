@@ -52,7 +52,7 @@ window.Warman = window.Warman || {};
           <div class="field"><label>Varsayılan çalışma yeri</label>
             <select id="sLoc">${Warman.config.locations.map((l)=>`<option ${s.defaultLocation===l?"selected":""}>${l}</option>`).join("")}</select>
           </div>
-          <p class="work-help">Maaş, vardiya, mola ve fazla mesai katsayısını iş ve mesai bölümünden ay bazında ayarlayabilirsin.</p>
+          <p class="work-help">Maaş, BES kesintisi ve mesai katsayısını iş ve mesai bölümünden ay bazında ayarlayabilirsin.</p>
           <button class="btn work-spaced" id="openPayrollSettings">Maaş ve mesai hesabına git</button>
         </section>
         <section class="card panel-pad">
