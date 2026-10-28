@@ -25,10 +25,18 @@
 .work-spaced { margin-top: 14px; }
 .work-check { display: flex; gap: 8px; align-items: center; margin-top: 14px; font-size: 12px; }
 .work-notice { margin-top: 12px; padding: 10px 12px; border-radius: 8px; background: var(--warning-soft); color: var(--warning); font-size: 12px; line-height: 1.6; }
+.payroll-pockets { display: grid; gap: 10px; }
 .payroll-total { background: var(--primary-soft); padding: 18px; border-radius: 12px; display: grid; gap: 8px; }
 .payroll-total > span { font-size: 12px; color: var(--text-muted); }
 .payroll-total > strong { font-size: clamp(26px, 3vw, 36px); color: var(--primary); letter-spacing: -.04em; font-variant-numeric: tabular-nums; }
 .payroll-total small { font-size: 11px; color: var(--text-muted); line-height: 1.5; }
+.payroll-total.is-ot { background: var(--success-soft); }
+.payroll-total.is-ot > strong { color: var(--success); }
+.payroll-total.is-travel { background: var(--surface-2); border: 1px solid var(--border); }
+.payroll-total.is-travel > strong { color: var(--text); }
+.payroll-total.is-sum { background: var(--primary); }
+.payroll-total.is-sum > span, .payroll-total.is-sum small { color: rgba(255,255,255,.8); }
+.payroll-total.is-sum > strong { color: #fff; }
 .payroll-daily { display: flex; justify-content: space-between; gap: 12px; align-items: center; margin-top: 12px; padding: 12px 14px; border: 1px solid var(--border); border-radius: 10px; font-size: 13px; }
 .payroll-daily small { display: block; font-size: 11px; color: var(--text-muted); margin-top: 4px; }
 .payroll-daily strong { color: var(--success); white-space: nowrap; }

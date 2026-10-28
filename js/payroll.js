@@ -1,7 +1,7 @@
 window.Warman = window.Warman || {};
 (function () {
-  // Personal salary estimate. Only saved daily records earn pay; daily rates
-  // use the selected month's calendar length, without schedule or break rules.
+  // Personal salary estimate. Monthly pay uses a 30-day wage month. Absences
+  // deduct one 30th of net. Overtime and BES use official gross.
   const WAGES = {
     2025: { net: 22104.67, gross: 26005.50 },
     2026: { net: 28075.50, gross: 33030.00 }
@@ -43,6 +43,9 @@ window.Warman = window.Warman || {};
     }
   };
 
+  const SALARY_DAYS = 30;
+  const OVERTIME_YEAR_HOURS = 225;
+
   function numeric(value, fallback) {
     if (value == null || value === "") return fallback;
     const n = Number(String(value).trim().replace(",", "."));
@@ -69,7 +72,7 @@ window.Warman = window.Warman || {};
     return {
       payrollSalaryMode: "minimum", payrollSalaryBasis: "net",
       payrollMonthlySalary: WAGES[selectedYear]?.net ?? "",
-      payrollDailyHours: 10, payrollOvertimeMultiplier: 1.5, payrollBesRate: 3
+      payrollDailyHours: 10, payrollOvertimeMultiplier: 1.5, payrollRestMultiplier: 2, payrollBesRate: 3, payrollTravelPay: 4000
     };
   }
 
@@ -82,13 +85,39 @@ window.Warman = window.Warman || {};
     const baseSalary = round(Math.max(0, amount));
     const selectedMonth = Number(month) || new Date().getMonth() + 1;
     const daysInMonth = new Date(Number(year), selectedMonth, 0).getDate();
+    const officialGross = WAGES[year]?.gross || 0;
+    const overtimeBase = custom ? baseSalary : (officialGross || baseSalary);
     const besRate = Math.min(100, Math.max(0, numeric(s.payrollBesRate, 3)));
+    const travelPay = round(Math.max(0, numeric(s.payrollTravelPay, 4000)));
+    const dailyRate = baseSalary / SALARY_DAYS;
+    const hourlyRate = overtimeBase / OVERTIME_YEAR_HOURS;
     return {
-      settings: s, basis, salaryKnown, baseSalary, daysInMonth, besRate,
-      dailyRate: baseSalary / daysInMonth, hourlyRate: baseSalary / 225,
-      netDailyRate: (baseSalary - round(baseSalary * besRate / 100)) / daysInMonth,
-      overtimeMultiplier: Math.max(1.5, numeric(s.payrollOvertimeMultiplier, 1.5))
+      settings: s, basis, salaryKnown, baseSalary, grossSalary: round(Math.max(0, overtimeBase)),
+      daysInMonth, salaryDays: SALARY_DAYS, besRate, travelPay, dailyRate, hourlyRate,
+      netDailyRate: (baseSalary - round(overtimeBase * besRate / 100)) / SALARY_DAYS,
+      overtimeMultiplier: Math.max(1.5, numeric(s.payrollOvertimeMultiplier, 1.5)),
+      restMultiplier: Math.max(1.5, numeric(s.payrollRestMultiplier, 2))
     };
+  }
+
+  function dayKind(date, settings, holidayOverride) {
+    const parsed = parseDate(date);
+    const today = new Date();
+    const rate = rates(settings, parsed?.year || today.getFullYear(), parsed?.month || today.getMonth() + 1);
+    const holiday = holidayForDate(date);
+    let fraction = holiday.fraction;
+    let name = holiday.name;
+    if (holidayOverride != null && holidayOverride !== "" && holidayOverride !== "auto") {
+      fraction = [0, 0.5, 1].includes(numeric(holidayOverride, 0)) ? numeric(holidayOverride, 0) : 0;
+      name = fraction ? (holiday.name || "Resmî tatil") : "";
+    }
+    const holidayInfo = { fraction, name, known: holiday.known };
+    if (!parsed) return { kind: "weekday", label: "Hafta içi", overtimeMultiplier: rate.overtimeMultiplier, holiday: holidayInfo };
+    const dow = new Date(parsed.year, parsed.month - 1, parsed.day).getDay();
+    if (fraction) return { kind: "holiday", label: name || "Resmî tatil", overtimeMultiplier: rate.restMultiplier, holiday: holidayInfo };
+    if (dow === 0) return { kind: "sunday", label: "Pazar", overtimeMultiplier: rate.restMultiplier, holiday: holidayInfo };
+    if (dow === 6) return { kind: "saturday", label: "Cumartesi", overtimeMultiplier: rate.overtimeMultiplier, holiday: holidayInfo };
+    return { kind: "weekday", label: "Hafta içi", overtimeMultiplier: rate.overtimeMultiplier, holiday: holidayInfo };
   }
 
   function holidayForDate(date) {
@@ -110,8 +139,14 @@ window.Warman = window.Warman || {};
     return parseHours(settings.payrollDailyHours ?? 10);
   }
 
-  function dailyShare(monthlyAmount, day, daysInMonth) {
-    return round(round(monthlyAmount * day / daysInMonth) - round(monthlyAmount * (day - 1) / daysInMonth));
+  function portion(total, index, count) {
+    if (!count) return 0;
+    return round(round(total * index / count) - round(total * (index - 1) / count));
+  }
+
+  function dayShare(monthlyAmount, days, daysInMonth) {
+    if (!daysInMonth) return 0;
+    return round(monthlyAmount * Math.min(days, daysInMonth) / daysInMonth);
   }
 
   function recordDetails(record, settings) {
@@ -130,13 +165,16 @@ window.Warman = window.Warman || {};
     const holidayWorkedFraction = worked ? holidayFraction : 0;
     // Hours are user-entered quantities. No clock, attendance, daily or weekly
     // duration limit is imposed on the overtime number.
+    const kind = dayKind(record.date, settings, holidayFraction);
     const enteredOvertime = record.overtime === "Mesai yaptım" ? parseHours(record.overtime_hours) : 0;
+    // Weekend/holiday work hours are the day's overtime. Do not add a hidden
+    // weekday shift on top of the hours the user typed.
     const overtimeHours = enteredOvertime;
     const paidLeave = record.attendance === "İzinliyim" && p.unpaid !== true;
     const payable = worked || paidLeave;
     const unpaidDays = payable ? 0 : 1;
-    const dailyBasePay = dailyShare(rate.baseSalary, date?.day || 1, rate.daysInMonth);
-    const overtimePay = round(overtimeHours * rate.hourlyRate * rate.overtimeMultiplier);
+    const dailyBasePay = dayShare(rate.baseSalary, 1, rate.salaryDays);
+    const overtimePay = round(overtimeHours * rate.hourlyRate * kind.overtimeMultiplier);
     const holidayPay = round(holidayWorkedFraction * rate.dailyRate);
     const deduction = unpaidDays ? dailyBasePay : 0;
     const besDeduction = round((dailyBasePay - deduction) * rate.besRate / 100);
@@ -144,6 +182,7 @@ window.Warman = window.Warman || {};
     return {
       recordId: record.id, date: record.date, worked, workedHours, paidLeave, payable,
       overtimeHours, enteredOvertime, holidayFraction, holidayWorkedFraction, holidayName,
+      dayKind: kind.kind, dayLabel: kind.label, overtimeMultiplier: kind.overtimeMultiplier,
       unpaidDays, baseDaily: rate.dailyRate, baseHourly: rate.hourlyRate, dailyBasePay,
       overtimePay, holidayPay, deduction, extraPay: round(overtimePay + holidayPay - deduction),
       besRate: rate.besRate, besDeduction, dailyPay, netDailyPay: round(dailyPay - besDeduction),
@@ -171,45 +210,47 @@ window.Warman = window.Warman || {};
     if (!RELIGIOUS_HOLIDAYS[year]) warnings.push(`${year} yılı dinî bayram takvimi tanımlı değil; tatilleri elle seçin.`);
     details.forEach((detail) => detail.warnings.forEach((warning) => warnings.push(`${detail.date}: ${warning}`)));
 
-    let cumulativePaidBase = 0;
-    let previousBes = 0;
-    const dailyBreakdown = [];
-    // Missing dates contribute nothing. The optional legacy asOf argument is
-    // intentionally ignored: saved dates, including future ones, determine pay.
-    // Allocate BES against cumulative saved paid wages to reconcile cents.
-    details.forEach((detail) => {
-      const day = parseDate(detail.date).day;
-      const dailyBasePay = detail.dailyBasePay;
-      const deduction = detail.deduction;
-      cumulativePaidBase = round(cumulativePaidBase + dailyBasePay - deduction);
-      const cumulativeBes = round(cumulativePaidBase * rate.besRate / 100);
-      const besDeduction = round(cumulativeBes - previousBes);
-      previousBes = cumulativeBes;
-      const dailyPay = round(dailyBasePay + detail.overtimePay + detail.holidayPay - deduction);
-      const netDailyPay = round(dailyPay - besDeduction);
-      const row = { day, date: detail.date, recordId: detail.recordId, dailyBasePay, deduction, besDeduction, dailyPay, netDailyPay,
-        overtimePay: detail.overtimePay, holidayPay: detail.holidayPay };
-      dailyBreakdown.push(row);
-      Object.assign(detail, { dailyBasePay, deduction, besDeduction, dailyPay, netDailyPay,
-        extraPay: round(detail.overtimePay + detail.holidayPay - deduction) });
-    });
     const quantity = (list, field) => list.reduce((total, detail) => total + detail[field], 0);
     const sum = (list, field) => round(quantity(list, field));
+    const dailyBreakdown = [];
+    // Monthly salary is the base. Unrecorded days, including weekends, stay
+    // paid. Only Gelmedim and unpaid leave take a calendar-day share. The
+    // optional legacy asOf argument is ignored: absences determine deductions.
     const recordedDays = details.length;
     const payableDays = details.filter((detail) => detail.payable).length;
-    const accruedBaseSalary = sum(dailyBreakdown, "dailyBasePay");
-    const deductions = sum(dailyBreakdown, "deduction");
-    const besDeduction = sum(dailyBreakdown, "besDeduction");
+    const unpaidDays = quantity(details, "unpaidDays");
+    const dailyBasePay = dayShare(rate.baseSalary, 1, rate.salaryDays);
+    const deductions = dayShare(rate.baseSalary, unpaidDays, rate.salaryDays);
+    const paidBaseSalary = round(rate.baseSalary - deductions);
+    const paidGross = round(rate.grossSalary - dayShare(rate.grossSalary, unpaidDays, rate.salaryDays));
+    const besDeduction = round(paidGross * rate.besRate / 100);
     const overtimePay = sum(details, "overtimePay"), holidayPay = sum(details, "holidayPay");
-    const paidBaseSalary = round(accruedBaseSalary - deductions);
-    const total = round(paidBaseSalary + overtimePay + holidayPay - besDeduction);
+    const travelPay = rate.travelPay;
+    // Salary is net after BES on prorated gross. Overtime and travel stay separate.
+    const salaryTotal = round(paidBaseSalary + holidayPay - besDeduction);
+    const combinedTotal = round(salaryTotal + overtimePay + travelPay);
+    const total = salaryTotal;
+    const accruedBaseSalary = rate.baseSalary;
+    let unpaidIndex = 0;
+    details.forEach((detail) => {
+      const day = parseDate(detail.date).day;
+      const deduction = detail.unpaidDays ? portion(deductions, ++unpaidIndex, unpaidDays) : 0;
+      const extraPay = round(detail.overtimePay + detail.holidayPay - deduction);
+      const dailyPay = extraPay;
+      const netDailyPay = extraPay;
+      const row = { day, date: detail.date, recordId: detail.recordId, dailyBasePay, deduction, besDeduction: 0, dailyPay, netDailyPay,
+        overtimePay: detail.overtimePay, holidayPay: detail.holidayPay };
+      dailyBreakdown.push(row);
+      Object.assign(detail, { dailyBasePay, deduction, besDeduction: 0, dailyPay, netDailyPay, extraPay });
+    });
     return {
       year, month, basis: rate.basis, salaryKnown: rate.salaryKnown, daysInMonth: rate.daysInMonth,
-      baseSalary: rate.baseSalary, dailyRate: rate.dailyRate, hourlyRate: rate.hourlyRate,
-      netDailyRate: rate.netDailyRate, overtimeMultiplier: rate.overtimeMultiplier, besRate: rate.besRate, besDeduction,
+      salaryDays: rate.salaryDays, baseSalary: rate.baseSalary, grossSalary: rate.grossSalary,
+      dailyRate: rate.dailyRate, hourlyRate: rate.hourlyRate, paidGross,
+      netDailyRate: rate.netDailyRate, overtimeMultiplier: rate.overtimeMultiplier, restMultiplier: rate.restMultiplier, besRate: rate.besRate, besDeduction,
       overtimeHours: quantity(details, "overtimeHours"), overtimePay,
       holidayDays: quantity(details, "holidayWorkedFraction"), holidayPay,
-      unpaidDays: quantity(details, "unpaidDays"), deductions,
+      unpaidDays, deductions, travelPay, salaryTotal, combinedTotal,
       total, recordedDays, payableDays, earnedBaseSalary: accruedBaseSalary, paidBaseSalary,
       workedDays: details.filter((d) => d.worked).length, workedHours: quantity(details, "workedHours"),
       accruedDays: recordedDays, accruedBaseSalary, accruedOvertimePay: overtimePay, accruedHolidayPay: holidayPay,
@@ -218,5 +259,5 @@ window.Warman = window.Warman || {};
     };
   }
 
-  Warman.payroll = { defaults, rates, holidayForDate, recordDetails, summarize, parseHours, sources: SOURCES, minimumWages: WAGES };
+  Warman.payroll = { defaults, rates, holidayForDate, dayKind, recordDetails, summarize, parseHours, sources: SOURCES, minimumWages: WAGES };
 })();

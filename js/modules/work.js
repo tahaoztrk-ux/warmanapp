@@ -67,6 +67,9 @@ window.Warman = window.Warman || {};
     const summary = P().summarize(records, ps, selectedMonth);
     const st = { ...stats(summary.records), mesai: summary.overtimeHours };
     const holiday = P().holidayForDate(form.date);
+    const holidayOverride = form.holiday === "auto" ? undefined : Number(form.holiday);
+    const kind = P().dayKind(form.date, ps, holidayOverride);
+    const specialWork = form.attendance === "İşe geldim" && kind.kind !== "weekday";
     view.innerHTML = `
       <div class="view-head">
         <div>
@@ -109,35 +112,43 @@ window.Warman = window.Warman || {};
             </select>
           </div>
           <p class="work-help">Tatilde çalışırsan aylık ücrete ek 1 günlük ücret; yarım gün için ek ½ günlük ücret hesaplanır.</p>
+          ${form.attendance === "İşe geldim" && kind.kind === "weekday" ? '<p class="work-help">Normal iş günü maaşı artırmaz; aylık asgari zaten tam görünür. Yalnız fazla mesai saatini yaz, tam günü tekrar yazma.</p>' : ""}
           ${form.attendance === "İzinliyim" ? `<label class="work-check"><input id="wUnpaid" type="checkbox" ${form.unpaid ? "checked" : ""}> Ücretsiz izin</label>` : ""}
-          ${form.attendance === "Gelmedim" ? '<p class="work-help">Gelinmeyen günün temel ücreti kazanca eklenmez.</p>' : ""}
+          ${form.attendance === "Gelmedim" ? '<p class="work-help">Yalnızca gelinmedi kaydı aylık maaştan bir günlük ücret düşer. Hafta sonunu işaretlemezsen o gün düşülmez.</p>' : ""}
+          ${specialWork ? `
+          <p style="font-size:12px;color:var(--text-muted);margin:12px 0 6px">${U().escapeHtml(kind.label)}</p>
+          <div class="field" id="hoursWrap">
+            <label for="wHours">${kind.kind === "saturday" ? "Cumartesi günü geldin. Kaç saat çalıştın?" : kind.kind === "sunday" ? "Pazar günü geldin. Kaç saat çalıştın?" : U().escapeHtml(kind.label) + " günü geldin. Kaç saat çalıştın?"}</label>
+            <input id="wHours" value="${U().escapeHtml(form.hours)}" placeholder="10" inputmode="decimal">
+            <p class="work-help">${kind.kind === "saturday" ? "Bu saatlerin hepsi cumartesi mesaisidir (×" + hoursText(kind.overtimeMultiplier) + "). 10 saat durduysan yalnız 10 yaz; geldim + 10 saat diye 20 yazma." : "Bu saatlerin hepsi " + (kind.kind === "sunday" ? "pazar" : "tatil") + " mesaisidir (×" + hoursText(kind.overtimeMultiplier) + "). 10 saat durduysan yalnız 10 yaz."}${kind.kind === "holiday" ? " Ayrıca 1 günlük tatil eki maaşa eklenir." : ""} 1,5 veya 1:30 yazabilirsin.</p>
+          </div>` : `
           <p style="font-size:12px;color:var(--text-muted);margin:12px 0 6px">Mesai</p>
           <div class="choice-group">
             ${choice("overtime","Mesai yok","no","Mesai yapmadım")}
             ${choice("overtime","Mesai var","yes","Mesai yaptım")}
           </div>
           <div class="field" id="hoursWrap" style="margin-top:10px;${form.overtime==="Mesai yaptım"?"":"display:none"}">
-            <label for="wHours">Kaç saat mesai yaptın?</label>
+            <label for="wHours">Kaç saat fazla mesai yaptın?</label>
             <input id="wHours" value="${U().escapeHtml(form.hours)}" placeholder="1,5" inputmode="decimal">
-            <p class="work-help">1,5 veya 1:30 yazabilirsin. Hafta içi ve hafta sonu için girdiğin saat doğrudan kullanılır.</p>
-          </div>
+            <p class="work-help">Yalnız fazla saatleri yaz. Tam gün zaten maaşa dahil. 1,5 veya 1:30 yazabilirsin.</p>
+          </div>`}
           <p style="font-size:12px;color:var(--text-muted);margin:12px 0 6px">Çalışma yeri</p>
           <div class="choice-group">
             ${Warman.config.locations.map((l) => `<button class="choice ${form.location===l?"active info":""}" data-k="location" data-v="${U().escapeHtml(l)}">${U().escapeHtml(l)}</button>`).join("")}
           </div>
           <div class="field" style="margin-top:12px"><label>Açıklama (isteğe bağlı)</label><textarea id="wDesc">${U().escapeHtml(form.description)}</textarea></div>
           <button class="btn btn-primary" id="wSave" style="margin-top:12px" ${saving ? "disabled" : ""}>${saving ? "Kaydediliyor…" : "Kaydı kaydet"}</button>
-          <p class="work-help">Tarihi ve durumu seçip kaydettiğinde maaş toplamı güncellenir. Aynı tarihi tekrar kaydetmek o günün kaydını değiştirir.</p>
+          <p class="work-help">Aynı tarihi tekrar kaydetmek o günün kaydını değiştirir. Maaş kutusunu normal “geldim” günü değiştirmez.</p>
         </section>
         <section class="card panel-pad">
           <h3 class="panel-title">Aylık maaş özeti <span class="badge badge-planned">${summary.basis === "gross" ? "Brüt hesap" : "Net tahmin"}</span></h3>
-          <div class="payroll-total" aria-live="polite" aria-atomic="true"><span>Kayıtlara göre biriken maaş</span><strong id="salaryAccrued">${money(summary.accruedTotal)}</strong><small>${summary.recordedDays} kayıtlı gün · ${summary.payableDays} ücretli gün · BES sonrası</small></div>
-          <div class="payroll-daily"><span>Bir tam günün ücreti <small>BES sonrası</small></span><strong id="dailySalary">${money(summary.netDailyRate)}</strong></div>
+          ${pocketCards(summary, true)}
+          <div class="payroll-daily"><span>Bir tam günün ücreti <small>30 günlük ay</small></span><strong id="dailySalary">${money(summary.dailyRate)}</strong></div>
           <dl class="payroll-lines">
-            <div><dt>Kayıtlı günlerin temel ücreti <small>${summary.recordedDays} gün × ${money(summary.dailyRate)}</small></dt><dd>${money(summary.accruedBaseSalary)}</dd></div>
-            <div><dt>Mesai ve tatil ekleri</dt><dd class="payroll-positive">+ ${money(summary.accruedOvertimePay + summary.accruedHolidayPay)}</dd></div>
-            <div><dt>Ücretsiz izin ve gelinmeyen gün</dt><dd>− ${money(summary.accruedDeductions)}</dd></div>
-            <div><dt>BES kesintisi <small>%${hoursText(summary.besRate)} · kazanılan temel ücret üzerinden</small></dt><dd>− ${money(summary.accruedBesDeduction)}</dd></div>
+            <div><dt>Aylık temel asgari ücret <small>${money(summary.baseSalary)} / ${summary.salaryDays} gün</small></dt><dd>${money(summary.accruedBaseSalary)}</dd></div>
+            <div><dt>Gelinmedi / ücretsiz izin <small>${summary.unpaidDays} gün × ${money(summary.dailyRate)}</small></dt><dd>− ${money(summary.accruedDeductions)}</dd></div>
+            <div><dt>BES kesintisi <small>%${hoursText(summary.besRate)} · brüt ${money(summary.paidGross)}</small></dt><dd>− ${money(summary.accruedBesDeduction)}</dd></div>
+            <div><dt>Resmi tatil eki</dt><dd class="payroll-positive">+ ${money(summary.accruedHolidayPay)}</dd></div>
           </dl>
           <div class="stat-grid">
             <article class="stat-card"><div class="k">Çalışılan gün</div><div class="v">${st.geldi}</div></article>
@@ -145,9 +156,9 @@ window.Warman = window.Warman || {};
             <article class="stat-card"><div class="k">İzinli gün</div><div class="v">${st.izinli}</div></article>
             <article class="stat-card"><div class="k">Gelinmeyen gün</div><div class="v">${st.gelmedi}</div></article>
           </div>
-          <p class="work-help">Günlük temel ücret: ${money(summary.baseSalary)} / ${summary.daysInMonth} gün = ${money(summary.dailyRate)}. Mesai saati ücreti: ${money(summary.hourlyRate * summary.overtimeMultiplier)}.</p>
-          <p class="work-help">Toplam, seçili aydaki kayıtlı günlerden hesaplanır. İşe geldiğin gün ve ücretli izin maaşa eklenir; gelinmeyen gün ve ücretsiz izin eklenmez.</p>
-          ${!records.length ? '<p class="work-notice">Bu ay henüz kayıt yok; toplam 0 ₺. İlk çalışma gününü kaydettiğinde günlük kazancın eklenecek.</p>' : ""}
+          <p class="work-help">Günlük temel ücret: ${money(summary.baseSalary)} / ${summary.salaryDays} gün = ${money(summary.dailyRate)}. Hafta içi ve cumartesi mesai saati: ${money(summary.hourlyRate * summary.overtimeMultiplier)} (×${hoursText(summary.overtimeMultiplier)}). Pazar ve resmi tatil: ${money(summary.hourlyRate * summary.restMultiplier)} (×${hoursText(summary.restMultiplier)}).</p>
+          <p class="work-help">Maaş, mesai ve yol parası ayrı durur. BES, brüt asgari ücretin seçilen oranıdır; mesai ve yol parasına uygulanmaz. 17:30 gibi yazarsan saat:dakika okunur.</p>
+          ${!records.length ? '<p class="work-notice">Bu ay henüz gelinmedi kaydı yok; maaş aylık asgaridir. Bir gün gelmezsen o günü gelinmedi olarak işaretle.</p>' : ""}
           ${summary.warnings.map((w) => `<p class="work-notice">${U().escapeHtml(w)}</p>`).join("")}
           <button class="btn work-spaced" id="salaryDetails"><i class="ph ph-receipt"></i> Hesap dökümünü aç</button>
           ${salarySettingsHtml(ps, summary)}
@@ -163,7 +174,7 @@ window.Warman = window.Warman || {};
       };
     });
     view.querySelector("#wDate").onchange = (e) => { form.date = e.target.value; render(view, opts); };
-    view.querySelector("#wHoliday").onchange = (e) => form.holiday = e.target.value;
+    view.querySelector("#wHoliday").onchange = (e) => { form.holiday = e.target.value; render(view, opts); };
     view.querySelector("#wUnpaid")?.addEventListener("change", (e) => form.unpaid = e.target.checked);
     view.querySelector("#wHours")?.addEventListener("input", (e) => form.hours = e.target.value);
     view.querySelector("#wDesc").oninput = (e) => form.description = e.target.value;
@@ -205,7 +216,26 @@ window.Warman = window.Warman || {};
     return `<button class="choice ${active}" data-k="${k}" data-v="${U().escapeHtml(v)}">${U().escapeHtml(label)}</button>`;
   }
 
+  function saveToast(detail) {
+    if (detail.unpaidDays) return "Kayıt alındı. Maaştan 1 gün düşüldü.";
+    if (detail.overtimePay && detail.holidayPay) return "Kayıt alındı. Mesai ve tatil eki ayrı eklendi.";
+    if (detail.overtimePay) return "Kayıt alındı. Tutar Mesai kutusuna eklendi.";
+    if (detail.holidayPay) return "Kayıt alındı. Tatil eki maaşa eklendi.";
+    return "Kayıt alındı. Normal iş günü aylık maaşa zaten dahil; tutar artmaz.";
+  }
+
+  function pocketCards(summary, withIds) {
+    return `<div class="payroll-pockets">
+      <div class="payroll-total" aria-live="polite" aria-atomic="true"><span>Maaş</span><strong ${withIds ? 'id="salaryAccrued"' : ""}>${money(summary.salaryTotal)}</strong><small>Aylık asgari − gelinmedi − BES${summary.holidayPay ? " · tatil eki dahil" : ""}</small></div>
+      <div class="payroll-total is-ot"><span>Mesai</span><strong ${withIds ? 'id="overtimeAccrued"' : ""}>${money(summary.overtimePay)}</strong><small>${hoursText(summary.overtimeHours)} saat · BES kesilmez</small></div>
+      <div class="payroll-total is-travel"><span>Yol parası</span><strong ${withIds ? 'id="travelAccrued"' : ""}>${money(summary.travelPay)}</strong><small>Aylık · BES kesilmez</small></div>
+      <div class="payroll-total is-sum"><span>Toplam</span><strong ${withIds ? 'id="combinedAccrued"' : ""}>${money(summary.combinedTotal)}</strong><small>Maaş + mesai + yol parası</small></div>
+    </div>`;
+  }
+
   function salarySettingsHtml(s, summary) {
+    const bes = Number(s.payrollBesRate);
+    const besChip = (value, label) => `<button type="button" class="chip ${bes === value ? "active" : ""}" data-bes="${value}">${label}</button>`;
     return `<details class="salary-settings"><summary>Maaş ve BES ayarları</summary>
       <p class="work-help">Ayarlar seçili ay için bu tarayıcıda saklanır. Önceki ayların hesabını değiştirmez.</p>
       <form id="salarySettingsForm" class="work-settings-fields">
@@ -214,12 +244,17 @@ window.Warman = window.Warman || {};
           <div class="field"><label for="payBasis">Hesap temeli</label><select id="payBasis"><option value="net" ${s.payrollSalaryBasis === "net" ? "selected" : ""}>Net · tahmini ödeme</option><option value="gross" ${s.payrollSalaryBasis === "gross" ? "selected" : ""}>Brüt · kesinti öncesi</option></select></div>
         </div>
         <div class="field"><label for="paySalary">Aylık ücret (₺)</label><input id="paySalary" inputmode="decimal" value="${U().escapeHtml(s.payrollSalaryMode === "custom" ? s.payrollMonthlySalary : summary.baseSalary ?? "")}" ${s.payrollSalaryMode === "minimum" ? "disabled" : "required"}></div>
+        <div class="field"><label for="payTravel">Aylık yol parası (₺)</label><input id="payTravel" inputmode="decimal" value="${U().escapeHtml(s.payrollTravelPay)}" min="0" step="0.01" required></div>
         <div class="field"><label for="payBesRate">BES kesintisi (%)</label><input id="payBesRate" type="number" value="${U().escapeHtml(s.payrollBesRate)}" min="0" max="100" step="0.01" required></div>
-        <p class="work-help">Seçilen temel maaş üzerinden tahmini BES kesintisi. Bordrona göre oranı değiştirebilir, kesinti yoksa 0 yazabilirsin.</p>
-        <div class="field"><label for="payMultiplier">Fazla mesai katsayısı</label><input id="payMultiplier" type="number" value="${U().escapeHtml(s.payrollOvertimeMultiplier)}" min="1.5" max="5" step="0.05" required></div>
+        <div class="chip-row">${besChip(3, "%3")}${besChip(3.68, "%3,68")}${besChip(4, "%4")}</div>
+        <p class="work-help">BES brüt asgari üzerinden hesaplanır. Bordrodaki oran 3 ise 957 ₺ civarı çıkar; 3,68 veya 4 de yazabilirsin. Mesai ve yol parasına kesilmez.</p>
+        <div class="export-grid">
+          <div class="field"><label for="payMultiplier">Hafta içi / cumartesi katsayısı</label><input id="payMultiplier" type="number" value="${U().escapeHtml(s.payrollOvertimeMultiplier)}" min="1.5" max="5" step="0.05" required></div>
+          <div class="field"><label for="payRestMultiplier">Pazar / resmi tatil katsayısı</label><input id="payRestMultiplier" type="number" value="${U().escapeHtml(s.payrollRestMultiplier)}" min="1.5" max="5" step="0.05" required></div>
+        </div>
         <button class="btn btn-primary" type="submit">Bu ayın ayarlarını kaydet</button>
       </form>
-      <p class="work-help">Günlük ücret seçili ayın gün sayısına bölünür. Net tutarlar tahminidir; brüt seçeneğinde vergi ve SGK kesintileri düşülmez.</p>
+      <p class="work-help">Günlük ücret 30 günlük aya bölünür. Bir gün düşük maaş, yalnızca işaretlenen gelinmedi / ücretsiz izin içindir. Net tutarlar tahminidir; brüt seçeneğinde vergi ve SGK kesintileri düşülmez.</p>
     </details>`;
   }
 
@@ -236,21 +271,32 @@ window.Warman = window.Warman || {};
     };
     mode.onchange = update;
     view.querySelector("#payBasis").onchange = update;
+    const besInput = view.querySelector("#payBesRate");
+    view.querySelectorAll("[data-bes]").forEach((chip) => {
+      chip.onclick = () => {
+        besInput.value = chip.dataset.bes;
+        view.querySelectorAll("[data-bes]").forEach((other) => other.classList.toggle("active", other === chip));
+      };
+    });
     view.querySelector("#salarySettingsForm").onsubmit = (e) => {
       e.preventDefault();
+      const num = (el) => Number(String(el.value).trim().replace(",", "."));
       const next = {
         payrollSalaryMode: mode.value,
         payrollSalaryBasis: view.querySelector("#payBasis").value,
-        payrollMonthlySalary: Number(amount.value.trim().replace(",", ".")),
-        payrollBesRate: Number(view.querySelector("#payBesRate").value),
-        payrollOvertimeMultiplier: Number(view.querySelector("#payMultiplier").value)
+        payrollMonthlySalary: num(amount),
+        payrollTravelPay: num(view.querySelector("#payTravel")),
+        payrollBesRate: num(besInput),
+        payrollOvertimeMultiplier: num(view.querySelector("#payMultiplier")),
+        payrollRestMultiplier: num(view.querySelector("#payRestMultiplier"))
       };
-      if (!Number.isFinite(next.payrollBesRate) || next.payrollBesRate < 0 || next.payrollBesRate > 100 || !Number.isFinite(next.payrollOvertimeMultiplier) || next.payrollOvertimeMultiplier < 1.5 || (next.payrollSalaryMode === "custom" && (!Number.isFinite(next.payrollMonthlySalary) || next.payrollMonthlySalary <= 0))) {
-        return Warman.ui.toast("Geçerli bir maaş, BES oranı ve mesai katsayısı girin.", "error");
+      if (!Number.isFinite(next.payrollBesRate) || next.payrollBesRate < 0 || next.payrollBesRate > 100 || !Number.isFinite(next.payrollTravelPay) || next.payrollTravelPay < 0 || !Number.isFinite(next.payrollOvertimeMultiplier) || next.payrollOvertimeMultiplier < 1.5 || !Number.isFinite(next.payrollRestMultiplier) || next.payrollRestMultiplier < 1.5 || (next.payrollSalaryMode === "custom" && (!Number.isFinite(next.payrollMonthlySalary) || next.payrollMonthlySalary <= 0))) {
+        return Warman.ui.toast("Geçerli bir maaş, yol parası, BES oranı ve mesai katsayısı girin.", "error");
       }
       try {
         const s = Warman.store.get().settings;
-        Warman.store.saveSettings({ payrollMonths: { ...(s.payrollMonths || {}), [selectedMonth]: next } });
+        const prev = s.payrollMonths?.[selectedMonth] || {};
+        Warman.store.saveSettings({ payrollMonths: { ...(s.payrollMonths || {}), [selectedMonth]: { ...prev, ...next } } });
         Warman.ui.toast("Bu ayın maaş ayarları kaydedildi.", "success");
         render(view);
       } catch (err) { Warman.ui.toast("Ayarlar kaydedilemedi: " + err.message, "error"); }
@@ -304,8 +350,8 @@ window.Warman = window.Warman || {};
         <td>${attSymbol(r.attendance)}</td>
         <td>${money(detail.dailyBasePay)}</td>
         <td>${otSymbol(r.overtime, r.overtime_hours)}</td>
-        <td>${detail.holidayFraction ? `<span class="badge badge-waiting">${detail.holidayFraction === 0.5 ? "Yarım gün" : "Resmi tatil"}</span><br><small>${U().escapeHtml(detail.holidayName)}</small>` : "Normal gün"}</td>
-        <td><strong>${money(detail.netDailyPay)}</strong><br><small>BES: −${money(detail.besDeduction)}${detail.unpaidDays ? " · Ücretsiz gün" : ""}</small></td>
+        <td>${detail.holidayFraction ? `<span class="badge badge-waiting">${detail.holidayFraction === 0.5 ? "Yarım gün" : "Resmi tatil"}</span><br><small>${U().escapeHtml(detail.holidayName)} · ×${hoursText(detail.overtimeMultiplier)}</small>` : `${U().escapeHtml(detail.dayLabel || "Hafta içi")}${detail.overtimeHours ? " · ×" + hoursText(detail.overtimeMultiplier) : ""}`}</td>
+        <td><strong>${money(detail.netDailyPay)}</strong><br><small>${detail.unpaidDays ? "Aylık maaştan düşüldü" : "Mesai ve tatil eki"}</small></td>
         <td>${locSymbol(r.location)} ${r.description ? U().escapeHtml(r.description) : ""}</td>
         <td>
           <button class="icon-btn" data-edit="${r.id}" title="Düzenle"><i class="ph ph-pencil-simple"></i></button>
@@ -324,20 +370,25 @@ window.Warman = window.Warman || {};
       <span>${locSymbol("Saha")} Saha</span>
       <span>${locSymbol("Uzaktan")} Uzaktan</span>
     </div>
-    <table class="data work-table"><thead><tr><th>Tarih</th><th>Durum</th><th>Günlük temel ücret</th><th>Mesai saati</th><th>Gün türü</th><th>Günlük kazanç · BES sonrası</th><th>Yer / Not</th><th>İşlem</th></tr></thead><tbody>${rows}</tbody></table>`;
+    <table class="data work-table"><thead><tr><th>Tarih</th><th>Durum</th><th>Günlük temel ücret</th><th>Mesai saati</th><th>Gün türü</th><th>Günlük ek / kesinti</th><th>Yer / Not</th><th>İşlem</th></tr></thead><tbody>${rows}</tbody></table>`;
   }
 
   async function save(view) {
     if (saving) return;
     const date = (document.getElementById("wDate")?._flatpickr?.input?.value) || document.getElementById("wDate").value || form.date;
     const attendance = form.attendance;
-    const overtime = form.overtime;
-    let hours = overtime === "Mesai yaptım" ? document.getElementById("wHours").value : "";
+    const holidayOverride = form.holiday === "auto" ? undefined : Number(form.holiday);
+    const kind = P().dayKind(date, monthSettings(monthOf(date) || selectedMonth), holidayOverride);
+    const specialWork = attendance === "İşe geldim" && kind.kind !== "weekday";
+    const hoursInput = document.getElementById("wHours")?.value || "";
+    let overtime = specialWork && hoursInput ? "Mesai yaptım" : (specialWork ? "Mesai yapmadım" : form.overtime);
+    let hours = overtime === "Mesai yaptım" ? hoursInput : "";
     const location = form.location;
     const description = document.getElementById("wDesc").value.trim();
     if (!date || !attendance || !overtime || !location) return Warman.ui.toast("Tarih, gelme, mesai ve yer gerekli.");
     const parsedDate = U().parseDotDate(date);
     if (!parsedDate || U().toDotDate(parsedDate) !== date) return Warman.ui.toast("Geçerli bir tarih girin (gg.aa.yyyy).", "error");
+    if (specialWork && (kind.kind === "saturday" || kind.kind === "sunday") && !hours) return Warman.ui.toast(kind.kind === "saturday" ? "Cumartesi kaç saat çalıştığını gir." : "Pazar kaç saat çalıştığını gir.");
     if (overtime === "Mesai yaptım" && !hours) return Warman.ui.toast("Mesai saatini girin.");
     const parsed = U().parseHours(hours);
     if (overtime === "Mesai yaptım" && (!/^(?:\d+(?:[.,]\d+)?|\d+:[0-5]\d)$/.test(hours.trim()) || !Number.isFinite(parsed) || parsed < 0)) return Warman.ui.toast("Sayısal bir saat girin. Örn: 1,5 veya 1:30", "error");
@@ -350,7 +401,8 @@ window.Warman = window.Warman || {};
     const payroll = {
       holidayFraction: form.holiday === "auto" ? holiday.fraction : Number(form.holiday),
       holidayName: form.holiday === "auto" ? holiday.name : (form.holiday === "0" ? "" : "Resmi tatil (manuel)"),
-      unpaid: attendance !== "İşe geldim" && form.unpaid
+      unpaid: attendance !== "İşe geldim" && form.unpaid,
+      workedHours: specialWork ? String(parsed) : undefined
     };
     const payload = {
       id: record?.id || U().uid(),
@@ -369,8 +421,9 @@ window.Warman = window.Warman || {};
       else latest.unshift({ ...payload, ...saved });
       Warman.store.set({ work: latest });
       selectedMonth = monthOf(date);
+      const detail = P().recordDetails(payload, monthSettings(selectedMonth));
       resetForm();
-      Warman.ui.toast("İş kaydı kaydedildi.", "success");
+      Warman.ui.toast(saveToast(detail), "success");
     } catch (err) {
       Warman.ui.toast("Kayıt başarısız: " + err.message, "error");
     } finally {
@@ -576,16 +629,17 @@ window.Warman = window.Warman || {};
     const overlay = document.createElement("div");
     overlay.className = "modal-overlay";
     overlay.innerHTML = `<div class="modal payroll-modal" role="dialog" aria-modal="true" aria-labelledby="payrollTitle"><h3 id="payrollTitle">${U().MONTHS[summary.month - 1]} ${summary.year} · Maaş dökümü</h3>
-      <p>${summary.basis === "gross" ? "Brüt maaş üzerinden kişisel takip hesabı; vergi ve SGK kesintileri düşülmez." : "Net maaş üzerinden tahmini ödeme hesabı."} Günlük temel ücret = aylık maaş / ${summary.daysInMonth} gün.</p>
-      <div class="payroll-total"><span>Kayıtlara göre biriken maaş · ${summary.recordedDays} kayıtlı gün</span><strong>${money(summary.accruedTotal)}</strong></div>
-      <div class="payroll-daily"><span>Bir tam günün ücreti <small>BES sonrası</small></span><strong>${money(summary.netDailyRate)}</strong></div>
+      <p>${summary.basis === "gross" ? "Brüt maaş üzerinden kişisel takip hesabı; vergi ve SGK kesintileri düşülmez." : "Net maaş üzerinden tahmini ödeme hesabı."} Günlük temel ücret = aylık maaş / ${summary.salaryDays} gün. Maaş, mesai ve yol parası ayrı gösterilir.</p>
+      ${pocketCards(summary, false)}
+      <div class="payroll-daily"><span>Bir tam günün ücreti <small>30 günlük ay</small></span><strong>${money(summary.dailyRate)}</strong></div>
       <dl class="payroll-lines">
-        <div><dt>Kayıtlı ${summary.recordedDays} günün temel ücreti</dt><dd>${money(summary.accruedBaseSalary)}</dd></div>
-        <div><dt>Fazla mesai · ${hoursText(summary.overtimeHours)} saat × ${money(summary.hourlyRate)} × ${summary.overtimeMultiplier}</dt><dd>+ ${money(summary.overtimePay)}</dd></div>
+        <div><dt>Aylık temel asgari ücret</dt><dd>${money(summary.accruedBaseSalary)}</dd></div>
+        <div><dt>Gelinmedi / ücretsiz izin · ${summary.unpaidDays} gün × ${money(summary.dailyRate)}</dt><dd>− ${money(summary.deductions)}</dd></div>
+        <div><dt>BES kesintisi · %${hoursText(summary.besRate)} · brüt ${money(summary.paidGross)}</dt><dd>− ${money(summary.besDeduction)}</dd></div>
         <div><dt>Resmi tatil · ${hoursText(summary.holidayDays)} gün × ${money(summary.dailyRate)}</dt><dd>+ ${money(summary.holidayPay)}</dd></div>
-        <div><dt>Ücretsiz izin / gelinmeyen gün · ${summary.unpaidDays} gün</dt><dd>− ${money(summary.deductions)}</dd></div>
-        <div><dt>BES kesintisi · %${hoursText(summary.besRate)}</dt><dd>− ${money(summary.besDeduction)}</dd></div>
-        <div><dt>Kayıtlara göre toplam kazanç</dt><dd>${money(summary.total)}</dd></div>
+        <div><dt>Mesai · ${hoursText(summary.overtimeHours)} saat · hafta içi/cumartesi ×${hoursText(summary.overtimeMultiplier)} · pazar/tatil ×${hoursText(summary.restMultiplier)}</dt><dd>+ ${money(summary.overtimePay)}</dd></div>
+        <div><dt>Yol parası · aylık</dt><dd>+ ${money(summary.travelPay)}</dd></div>
+        <div><dt>Toplam · maaş + mesai + yol</dt><dd>${money(summary.combinedTotal)}</dd></div>
       </dl>
       <div class="stat-grid">
         <div class="card stat-card"><div class="k">Çalışılan gün</div><div class="v">${st.geldi}</div></div>
@@ -593,12 +647,12 @@ window.Warman = window.Warman || {};
         <div class="card stat-card"><div class="k">İzinli gün</div><div class="v">${st.izinli}</div></div>
         <div class="card stat-card"><div class="k">Gelinmeyen gün</div><div class="v">${st.gelmedi}</div></div>
       </div>
-      <p class="work-help">Toplam yalnızca aşağıdaki kayıtlı günlerin kazancıdır. Kayıtsız günler 0 kabul edilir. Seçili aya kaydettiğin geçmiş veya gelecek tarihli günler aynı şekilde hesaplanır.</p>
-      <div class="table-wrap work-spaced"><table class="data"><thead><tr><th>Tarih</th><th>Gün</th><th>Günlük temel ücret</th><th>Mesai saati</th><th>Mesai ücreti</th><th>Tatil ek ücreti</th><th>Ücretsiz / gelinmeyen</th><th>BES</th><th>Günlük kazanç</th></tr></thead><tbody>
+      <p class="work-help">Tablodaki günlük kazanç satırları mesai, tatil eki ve kesintidir; aylık taban zaten yukarıda. Kayıtsız gün ve hafta sonu maaştan düşülmez.</p>
+      <div class="table-wrap work-spaced"><table class="data"><thead><tr><th>Tarih</th><th>Gün</th><th>Günlük temel ücret</th><th>Mesai saati</th><th>Mesai ücreti</th><th>Tatil ek ücreti</th><th>Ücretsiz / gelinmeyen</th><th>BES</th><th>Günlük ek / kesinti</th></tr></thead><tbody>
         ${summary.details.map((d) => `<tr><td>${U().escapeHtml(d.date)}</td><td>${U().escapeHtml(d.holidayName || d.record.attendance)}</td><td>${money(d.dailyBasePay)}</td><td>${hoursText(d.overtimeHours)}</td><td>${money(d.overtimePay)}</td><td>${money(d.holidayPay)}</td><td>${money(d.deduction)}</td><td>${money(d.besDeduction)}</td><td>${money(d.netDailyPay)}</td></tr>`).join("") || '<tr><td colspan="9">Bu ay henüz kayıt yok.</td></tr>'}
       </tbody></table></div>
       <p class="work-help">Resmi tatilde çalışılan güne ek 1 günlük ücret, yarım gün tatil seçimine ek ½ günlük ücret yazılır. Mesaiye girdiğin saat doğrudan kullanılır.</p>
-      <p class="work-help">BES, kayıtlı günlerde kazanılan temel ücretten %${hoursText(summary.besRate)} olarak tahmin edilir; mesai ve tatil eklerine uygulanmaz. Gerçek bordro kesintisine göre oranı ayarlayabilirsin.</p>
+      <p class="work-help">BES, brüt asgari ücretten gelinmedi düşüldükten sonra %${hoursText(summary.besRate)} olarak hesaplanır. Mesai ve yol parasına uygulanmaz. Oranı 3, 3,68 veya 4 yapabilirsin.</p>
       ${summary.warnings.map((w) => `<p class="work-notice">${U().escapeHtml(w)}</p>`).join("")}
       <p class="work-help">Kaynaklar: <a href="${P().sources.minimumWage}" target="_blank" rel="noopener noreferrer">ÇSGB asgari ücret</a> · <a href="${P().sources.bes}" target="_blank" rel="noopener noreferrer">EGM BES bilgisi</a> · <a href="${summary.year === 2025 ? P().sources.religious2025 : P().sources.religious2026}" target="_blank" rel="noopener noreferrer">Diyanet bayram takvimi</a></p>
       <div class="modal-actions" style="margin-top:16px"><button class="btn" data-payroll-csv>Maaş dökümü indir</button><button class="btn btn-primary" data-x>Kapat</button></div></div>`;
@@ -606,10 +660,11 @@ window.Warman = window.Warman || {};
     overlay.querySelector("[data-payroll-csv]").onclick = () => {
       const rows = [
         ["Maaş dönemi", selectedMonth], ["Hesap temeli", summary.basis === "gross" ? "Brüt" : "Net tahmin"],
-        ["Aylık maaş referansı", summary.baseSalary], ["Kayıtlı günlerin temel ücreti", summary.accruedBaseSalary], ["Mesai ücreti", summary.overtimePay],
-        ["Tatil ek ücreti", summary.holidayPay], ["Ücretsiz / gelinmeyen gün", summary.deductions], ["BES kesintisi", summary.besDeduction], ["Toplam kazanç", summary.total], [],
+        ["Aylık maaş referansı", summary.baseSalary], ["Aylık temel asgari ücret", summary.accruedBaseSalary], ["Maaş (BES sonrası)", summary.salaryTotal],
+        ["Mesai", summary.overtimePay], ["Yol parası", summary.travelPay], ["Toplam", summary.combinedTotal], ["Brüt BES matrahı", summary.paidGross],
+        ["Tatil ek ücreti", summary.holidayPay], ["Ücretsiz / gelinmeyen gün", summary.deductions], ["BES kesintisi", summary.besDeduction], [],
         ["Kayıtlı gün", summary.recordedDays], ["Ücretli gün", summary.payableDays], ["Ayın gün sayısı", summary.daysInMonth], [],
-        ["Tarih", "Durum", "Günlük temel ücret", "Mesai saati", "Mesai ücreti", "Tatil ek ücreti", "Ücretsiz / gelinmeyen", "BES", "Günlük kazanç"],
+        ["Tarih", "Durum", "Günlük temel ücret", "Mesai saati", "Mesai ücreti", "Tatil ek ücreti", "Ücretsiz / gelinmeyen", "BES", "Günlük ek / kesinti"],
         ...summary.details.map((d) => [d.date, d.holidayName || d.record.attendance, d.dailyBasePay, d.overtimeHours, d.overtimePay, d.holidayPay, d.deduction, d.besDeduction, d.netDailyPay])
       ];
       U().download(`maas-dokumu-${selectedMonth}.csv`, "\uFEFF" + rows.map((r) => r.map(csvCell).join(";")).join("\r\n"), "text/csv;charset=utf-8");
