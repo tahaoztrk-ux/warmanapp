@@ -10,11 +10,11 @@ Görevler, projeler ve iş kayıtları kimliğe göre upsert edilir. Veritabanı
 
 - Ay seçimi kayıt listesini, özeti ve dökümü filtreler. Dönemi kapatmak yalnızca seçili ayın güncel kayıtlarını arşivler.
 - 2025 ve 2026 için doğrulanmış net/brüt asgari ücretler tanımlıdır; diğer yıllar için özel ücret gerekir.
-- Günlük ücret, aylık temel ücretin seçili ayın gerçek gün sayısına (28, 29, 30 veya 31) bölünmesiyle hesaplanır. Bugüne kadar biriken temel ücret takvimde geçen günlere göre hesaplanır; yalnızca kayıt girilen günlerin sayısı kullanılmaz. Geçmiş aylar tam ay, gelecek aylar sıfır gün kabul edilir. Gelecek tarihli mesailer bugüne kadar biriken tutara eklenmez.
+- Günlük ücret, aylık temel ücretin seçili ayın gerçek gün sayısına (28, 29, 30 veya 31) bölünmesiyle hesaplanır. Biriken maaş yalnızca kaydedilen günlük kayıtların toplamıdır; kayıt yoksa 0'dır. Yeni gün kaydetmek kazancı artırır, silmek azaltır. Aynı tarihi tekrar kaydetmek o günü günceller; ikinci kez ücret eklemez. Seçili aya kaydedilmiş geçmiş ve gelecek tarihli günler bugünün tarihinden bağımsız hesaplanır.
 - Saatlik mesai ücreti aylık / 225; fazla mesai girilen saat × saatlik ücret × katsayıdır. Mesai süresi doğrudan sayı olarak girilir; 1000 saat gibi büyük değerler dahil günlük veya haftalık üst sınır uygulanmaz. Giriş/çıkış, AM/PM ve mola alanı yoktur; otomatik mola kesilmez.
 - Resmi tatilde çalışma, aylık ücrete ek bir günlük ücret getirir. Yarım gün tatil seçimi ek yarım günlük ücrettir. Girilen mesai saati, vardiya süresine göre sınırlandırılmaz.
-- BES oranı varsayılan %3'tür ve ayarlarla değiştirilebilir ya da sıfırlanabilir. Seçilen temel maaştan açıkça işaretlenen ücretsiz günler düşüldükten sonra belirtilen oranda tahmini kesinti yapılır; mesai/tatil eklerine uygulanmaz. Biriken tutardaki BES de geçen günlere göre hesaplanır.
-- Kayıt girilmeyen günler, ücretli izin ve işaretlenmeyen devamsızlık için kesinti yapılmaz. Yalnızca açıkça seçilen ücretsiz günler düşülür; toplam kesinti aylık temel ücreti aşmaz.
+- BES oranı varsayılan %3'tür ve ayarlarla değiştirilebilir ya da sıfırlanabilir. Yalnızca kayıtlı günlerde kazanılan temel ücretten tahmini kesinti yapılır; mesai/tatil eklerine uygulanmaz. Kayıt yoksa BES de 0'dır.
+- İşe gelinen günler ve ücretli izin temel ücret kazandırır. Gelinmeyen günler, açıkça seçilen ücretsiz izinler ve kayıt girilmeyen günler 0 temel ücret kazandırır. Kullanıcının ayrıca girdiği mesai saatleri seçilen devam durumuna göre sınırlandırılmaz.
 - Maaş, BES ve mesai katsayısı ayarları hesap ve ay bazında bu tarayıcının yerel depolamasında kalır. Günlük iş/tatil bilgileri Supabase'e kaydedilir. JSON yedeği ayarları da içerir.
 - Net hesap tahmindir. Brüt hesapta vergi/SGK kesintileri yapılmaz. Gün sayısına göre dağıtım ve BES oranı kullanıcının seçtiği takip hesabıdır; kişisel bordro kesintileri ayrıca hesaplanmaz.
 

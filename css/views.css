@@ -32,8 +32,6 @@
 .payroll-daily { display: flex; justify-content: space-between; gap: 12px; align-items: center; margin-top: 12px; padding: 12px 14px; border: 1px solid var(--border); border-radius: 10px; font-size: 13px; }
 .payroll-daily small { display: block; font-size: 11px; color: var(--text-muted); margin-top: 4px; }
 .payroll-daily strong { color: var(--success); white-space: nowrap; }
-.salary-projection { margin: 16px 0; font-size: 13px; }
-.salary-projection summary { cursor: pointer; color: var(--primary); font-weight: 600; }
 .payroll-lines { margin: 14px 0; }
 .payroll-lines > div { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--border); font-size: 13px; }
 .payroll-lines dt { color: var(--text-muted); }

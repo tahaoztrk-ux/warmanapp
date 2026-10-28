@@ -111,9 +111,11 @@ async function run() {
     check("schedule and break controls are absent", await page.locator('#wStart,#wEnd,#wBreak,#payStart,#payEnd,#payBreak,input[type="time"]').count() === 0);
     check("period labels describe days and overtime hours", await page.locator("#view").textContent().then(text => text.includes("Çalışılan gün") && text.includes("Mesai yapılan saat")));
     check("daily salary uses October calendar days and BES", await page.locator("#dailySalary").textContent().then(text => text.includes("878,49")));
-    const saveDay = async (date, description, overtime) => {
+    const visibleEarned = async () => Number((await page.locator("#salaryAccrued").textContent()).replace(/[^0-9,.-]/g, "").replace(/\./g, "").replace(",", "."));
+    const saveDay = async (date, description, overtime, attendance = "İşe geldim") => {
       await page.locator("#wDate").fill(date);
       await page.locator("#wDate").dispatchEvent("change");
+      await page.locator(`[data-k="attendance"][data-v="${attendance}"]`).click();
       if (overtime) {
         await page.locator('[data-k="overtime"][data-v="Mesai yaptım"]').click();
         await page.locator("#wHours").fill(overtime);
@@ -124,6 +126,52 @@ async function run() {
       await page.locator("#wSave").click();
       await page.waitForFunction(text => Warman.store.get().work.some(row => row.description === text), description);
     };
+    const deleteDay = async date => {
+      const id = await page.evaluate(value => Warman.store.get().work.find(row => row.date === value).id, date);
+      await page.locator(`[data-del="${id}"]`).click();
+      await page.locator(".modal-overlay [data-yes]").click();
+      await page.waitForFunction(value => !Warman.store.get().work.some(row => row.date === value), date);
+    };
+    const editDay = async (date, description, attendance, unpaid = false, nextDate) => {
+      const id = await page.evaluate(value => Warman.store.get().work.find(row => row.date === value).id, date);
+      await page.locator(`[data-edit="${id}"]`).click();
+      if (nextDate) {
+        await page.locator("#wDate").fill(nextDate);
+        await page.locator("#wDate").dispatchEvent("change");
+      }
+      await page.locator(`[data-k="attendance"][data-v="${attendance}"]`).click();
+      if (attendance === "İzinliyim") await page.locator("#wUnpaid").setChecked(unpaid);
+      await page.locator("#wDesc").fill(description);
+      await page.locator("#wSave").click();
+      await page.waitForFunction(text => Warman.store.get().work.some(row => row.description === text), description);
+    };
+    check("empty recorded month visibly starts at zero earned salary", await visibleEarned() === 0);
+    await saveDay("20.10.2026", "İlk günlük kazanç");
+    const oneDayEarned = await visibleEarned();
+    check("saving one ordinary date visibly adds one daily salary", Math.abs(oneDayEarned - 878.49) < 0.02);
+    await saveDay("21.10.2026", "İkinci günlük kazanç");
+    const twoDaysEarned = await visibleEarned();
+    check("saving a second ordinary date visibly increases earned salary", twoDaysEarned > oneDayEarned && Math.abs(twoDaysEarned - oneDayEarned * 2) < 0.03);
+    await deleteDay("21.10.2026");
+    check("deleting a recorded date visibly reduces earned salary", Math.abs(await visibleEarned() - oneDayEarned) < 0.02);
+    await editDay("20.10.2026", "Tarihi taşınan kayıt", "İşe geldim", false, "22.10.2026");
+    check("changing a record date keeps exactly one daily contribution", await page.evaluate(() => Warman.store.get().work.length === 1 && Warman.store.get().work[0].date === "22.10.2026") && Math.abs(await visibleEarned() - oneDayEarned) < 0.03);
+    await editDay("22.10.2026", "Gelinmeyen gün kazandırmaz", "Gelmedim");
+    check("marking a recorded date absent visibly removes its basic earnings", await visibleEarned() === 0);
+    await editDay("22.10.2026", "Ücretli izin kazancı", "İzinliyim");
+    check("paid leave contributes its recorded daily earnings", Math.abs(await visibleEarned() - oneDayEarned) < 0.03);
+    await editDay("22.10.2026", "Ücretsiz izin kazandırmaz", "İzinliyim", true);
+    check("changing paid leave to unpaid visibly reduces earnings to zero", await visibleEarned() === 0);
+    await deleteDay("22.10.2026");
+    await saveDay("29.10.2026", "Gelecek tarihli kaydedilen tatil");
+    check("a saved future date contributes immediately without a today cutoff", await visibleEarned() > oneDayEarned * 1.9);
+    await deleteDay("29.10.2026");
+    check("removing all records returns visible earned salary to zero", await visibleEarned() === 0);
+    await saveDay("01.09.2026", "Geçmiş ayın tek kaydı");
+    check("a past month earns only the saved day instead of a full automatic month", await visibleEarned() > 900 && await visibleEarned() < 1000);
+    await deleteDay("01.09.2026");
+    await page.locator("#salaryMonth").fill("2026-10");
+    await page.locator("#salaryMonth").dispatchEvent("change");
     await saveDay("28.10.2026", "Yarım resmi tatil");
     await saveDay("29.10.2026", "Tam resmi tatil");
     await saveDay("27.10.2026", "Normal gün fazla mesai", "2");
@@ -133,12 +181,17 @@ async function run() {
     check("October daily rate uses 31 calendar days", summary.daysInMonth === 31 && Math.abs(summary.dailyRate - 28075.5 / 31) < 0.001);
     check("full and half holidays retain their daily wage additions", summary.holidayDays === 1.5 && summary.holidayPay === 1358.49);
     check("arbitrary 1000 overtime hours are counted without shift limits", summary.overtimeHours === 1002 && Math.abs(summary.overtimePay - 187544.34) < 0.02);
-    check("monthly BES defaults to three percent of selected salary", summary.besDeduction === 842.27);
-    check("accrued salary stops at today and excludes future holiday extras", summary.accruedDays === 28 && summary.accruedTotal < summary.total && summary.accruedHolidayPay === 452.83);
+    check("BES applies only to the basic earnings of recorded dates", Math.abs(summary.besDeduction - (28075.5 / 31 * 4 * 0.03)) < 0.02);
+    check("earned salary includes exactly the four recorded dates and all their extras", summary.accruedDays === 4 && summary.accruedTotal === summary.total && summary.accruedHolidayPay === 1358.49);
     const accruedText = await page.locator("#salaryAccrued").textContent();
     check("accrued salary is prominently displayed", accruedText.includes(summary.accruedTotal.toLocaleString("tr-TR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })));
+    const beforeSameDayUpdate = await visibleEarned();
+    await saveDay("27.10.2026", "Aynı gün tek kazanç olarak güncellenir", "2");
+    check("saving the same date updates one contribution without doubling salary", await page.evaluate(() => Warman.store.get().work.length === 4) && await visibleEarned() === beforeSameDayUpdate);
+    const earnedBeforeReload = await visibleEarned();
     await page.reload();
     await page.waitForFunction(() => !Warman.store.get().loading);
+    check("visible recorded salary survives a fresh page load", await visibleEarned() === earnedBeforeReload);
     check("overtime and readable descriptions survive reload", await page.evaluate(() => Warman.store.get().work.length === 4 && Warman.store.get().work.find(row => row.date === "26.10.2026").overtime_hours === "1000"));
     const holidayId = await page.evaluate(() => Warman.store.get().work.find(row => row.date === "29.10.2026").id);
     const thousandId = await page.evaluate(() => Warman.store.get().work.find(row => row.date === "26.10.2026").id);
@@ -181,7 +234,7 @@ async function run() {
     await page.waitForFunction(() => !Warman.store.get().loading);
     check("salary and BES settings survive reload", await page.evaluate(() => Warman.store.get().settings.payrollMonths["2026-10"].payrollSalaryBasis === "gross" && Number(Warman.store.get().settings.payrollMonths["2026-10"].payrollBesRate) === 3));
     await page.locator("#nextMonth").click();
-    check("future month has zero accrued salary", await page.locator("#salaryAccrued").textContent().then(text => /0,00/.test(text)));
+    check("another month without records has zero earned salary", await visibleEarned() === 0);
     await page.setViewportSize({ width: 390, height: 844 });
     const mobile = await page.evaluate(() => ({ width: innerWidth, scroll: document.documentElement.scrollWidth,
       cards: [...document.querySelectorAll(".work-quick > .card")].map(el => ({ left: el.getBoundingClientRect().left, right: el.getBoundingClientRect().right })) }));
@@ -206,6 +259,7 @@ async function run() {
     await page.reload();
     await page.waitForFunction(() => !Warman.store.get().loading);
     await saveDay("01.11.2026", "Kasım kaydı arşivlenmemeli");
+    check("recording a date in a future month immediately earns its daily amount", await visibleEarned() > 900 && await visibleEarned() < 1000);
     await page.locator("#wDate").fill("02.11.2026");
     await page.locator("#wDate").dispatchEvent("change");
     await page.locator("#wDesc").fill("Gecikmeli kaydetme");

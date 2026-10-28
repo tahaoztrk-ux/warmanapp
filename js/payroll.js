@@ -1,7 +1,7 @@
 window.Warman = window.Warman || {};
 (function () {
-  // Personal salary estimate. Daily pay uses calendar days in the selected month;
-  // overtime is the entered number of hours, without schedule or break rules.
+  // Personal salary estimate. Only saved daily records earn pay; daily rates
+  // use the selected month's calendar length, without schedule or break rules.
   const WAGES = {
     2025: { net: 22104.67, gross: 26005.50 },
     2026: { net: 28075.50, gross: 33030.00 }
@@ -132,7 +132,9 @@ window.Warman = window.Warman || {};
     // duration limit is imposed on the overtime number.
     const enteredOvertime = record.overtime === "Mesai yaptım" ? parseHours(record.overtime_hours) : 0;
     const overtimeHours = enteredOvertime;
-    const unpaidDays = !worked && p.unpaid === true ? 1 : 0;
+    const paidLeave = record.attendance === "İzinliyim" && p.unpaid !== true;
+    const payable = worked || paidLeave;
+    const unpaidDays = payable ? 0 : 1;
     const dailyBasePay = dailyShare(rate.baseSalary, date?.day || 1, rate.daysInMonth);
     const overtimePay = round(overtimeHours * rate.hourlyRate * rate.overtimeMultiplier);
     const holidayPay = round(holidayWorkedFraction * rate.dailyRate);
@@ -140,7 +142,7 @@ window.Warman = window.Warman || {};
     const besDeduction = round((dailyBasePay - deduction) * rate.besRate / 100);
     const dailyPay = round(dailyBasePay + overtimePay + holidayPay - deduction);
     return {
-      recordId: record.id, date: record.date, worked, workedHours,
+      recordId: record.id, date: record.date, worked, workedHours, paidLeave, payable,
       overtimeHours, enteredOvertime, holidayFraction, holidayWorkedFraction, holidayName,
       unpaidDays, baseDaily: rate.dailyRate, baseHourly: rate.hourlyRate, dailyBasePay,
       overtimePay, holidayPay, deduction, extraPay: round(overtimePay + holidayPay - deduction),
@@ -165,47 +167,42 @@ window.Warman = window.Warman || {};
     });
     const selected = [...byDate.values()].sort((a, b) => parseDate(a.date).day - parseDate(b.date).day);
     const details = selected.map((record) => ({ record, ...recordDetails(record, settings) }));
-    const detailsByDay = new Map(details.map((detail) => [parseDate(detail.date).day, detail]));
     if (!rate.salaryKnown) warnings.push(`${year} yılı için doğrulanmış asgari ücret bulunmuyor. Bu ay için özel aylık ücret girin.`);
     if (!RELIGIOUS_HOLIDAYS[year]) warnings.push(`${year} yılı dinî bayram takvimi tanımlı değil; tatilleri elle seçin.`);
     details.forEach((detail) => detail.warnings.forEach((warning) => warnings.push(`${detail.date}: ${warning}`)));
 
-    const now = asOf instanceof Date ? asOf : (asOf == null ? new Date() : null);
-    const cutoff = now ? parseDate(`${now.getDate()}.${now.getMonth() + 1}.${now.getFullYear()}`) : parseDate(asOf);
-    if (!cutoff) throw new Error("Hesap tarihi gg.aa.yyyy biçiminde geçerli bir tarih olmalıdır.");
-    const accruedDays = cutoff.key < periodMonth ? 0 : cutoff.key > periodMonth ? rate.daysInMonth : cutoff.day;
     let cumulativePaidBase = 0;
     let previousBes = 0;
     const dailyBreakdown = [];
-    // Calendar allocation keeps 28/29/30/31-day salary and BES totals exact to
-    // the cent. Missing records still accrue ordinary salaried calendar pay.
-    for (let day = 1; day <= rate.daysInMonth; day++) {
-      const detail = detailsByDay.get(day);
-      const dailyBasePay = dailyShare(rate.baseSalary, day, rate.daysInMonth);
-      const deduction = detail?.unpaidDays ? dailyBasePay : 0;
+    // Missing dates contribute nothing. The optional legacy asOf argument is
+    // intentionally ignored: saved dates, including future ones, determine pay.
+    // Allocate BES against cumulative saved paid wages to reconcile cents.
+    details.forEach((detail) => {
+      const day = parseDate(detail.date).day;
+      const dailyBasePay = detail.dailyBasePay;
+      const deduction = detail.deduction;
       cumulativePaidBase = round(cumulativePaidBase + dailyBasePay - deduction);
       const cumulativeBes = round(cumulativePaidBase * rate.besRate / 100);
       const besDeduction = round(cumulativeBes - previousBes);
       previousBes = cumulativeBes;
-      const dailyPay = round(dailyBasePay + (detail?.overtimePay || 0) + (detail?.holidayPay || 0) - deduction);
+      const dailyPay = round(dailyBasePay + detail.overtimePay + detail.holidayPay - deduction);
       const netDailyPay = round(dailyPay - besDeduction);
-      const row = { day, dailyBasePay, deduction, besDeduction, dailyPay, netDailyPay,
-        overtimePay: detail?.overtimePay || 0, holidayPay: detail?.holidayPay || 0 };
+      const row = { day, date: detail.date, recordId: detail.recordId, dailyBasePay, deduction, besDeduction, dailyPay, netDailyPay,
+        overtimePay: detail.overtimePay, holidayPay: detail.holidayPay };
       dailyBreakdown.push(row);
-      if (detail) Object.assign(detail, { dailyBasePay, deduction, besDeduction, dailyPay, netDailyPay,
+      Object.assign(detail, { dailyBasePay, deduction, besDeduction, dailyPay, netDailyPay,
         extraPay: round(detail.overtimePay + detail.holidayPay - deduction) });
-    }
+    });
     const quantity = (list, field) => list.reduce((total, detail) => total + detail[field], 0);
     const sum = (list, field) => round(quantity(list, field));
-    const accruedRows = dailyBreakdown.filter((row) => row.day <= accruedDays);
-    const accruedBaseSalary = sum(accruedRows, "dailyBasePay");
-    const accruedOvertimePay = sum(accruedRows, "overtimePay");
-    const accruedHolidayPay = sum(accruedRows, "holidayPay");
-    const accruedDeductions = sum(accruedRows, "deduction");
-    const accruedBesDeduction = sum(accruedRows, "besDeduction");
+    const recordedDays = details.length;
+    const payableDays = details.filter((detail) => detail.payable).length;
+    const accruedBaseSalary = sum(dailyBreakdown, "dailyBasePay");
     const deductions = sum(dailyBreakdown, "deduction");
     const besDeduction = sum(dailyBreakdown, "besDeduction");
     const overtimePay = sum(details, "overtimePay"), holidayPay = sum(details, "holidayPay");
+    const paidBaseSalary = round(accruedBaseSalary - deductions);
+    const total = round(paidBaseSalary + overtimePay + holidayPay - besDeduction);
     return {
       year, month, basis: rate.basis, salaryKnown: rate.salaryKnown, daysInMonth: rate.daysInMonth,
       baseSalary: rate.baseSalary, dailyRate: rate.dailyRate, hourlyRate: rate.hourlyRate,
@@ -213,10 +210,10 @@ window.Warman = window.Warman || {};
       overtimeHours: quantity(details, "overtimeHours"), overtimePay,
       holidayDays: quantity(details, "holidayWorkedFraction"), holidayPay,
       unpaidDays: quantity(details, "unpaidDays"), deductions,
-      total: round(rate.baseSalary + overtimePay + holidayPay - deductions - besDeduction),
+      total, recordedDays, payableDays, earnedBaseSalary: accruedBaseSalary, paidBaseSalary,
       workedDays: details.filter((d) => d.worked).length, workedHours: quantity(details, "workedHours"),
-      accruedDays, accruedBaseSalary, accruedOvertimePay, accruedHolidayPay, accruedDeductions, accruedBesDeduction,
-      accruedTotal: round(accruedBaseSalary + accruedOvertimePay + accruedHolidayPay - accruedDeductions - accruedBesDeduction),
+      accruedDays: recordedDays, accruedBaseSalary, accruedOvertimePay: overtimePay, accruedHolidayPay: holidayPay,
+      accruedDeductions: deductions, accruedBesDeduction: besDeduction, accruedTotal: total,
       records: selected, details, dailyBreakdown, warnings: [...new Set(warnings)]
     };
   }

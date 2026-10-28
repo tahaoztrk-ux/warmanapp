@@ -109,7 +109,8 @@ window.Warman = window.Warman || {};
             </select>
           </div>
           <p class="work-help">Tatilde çalışırsan aylık ücrete ek 1 günlük ücret; yarım gün için ek ½ günlük ücret hesaplanır.</p>
-          ${form.attendance !== "İşe geldim" ? `<label class="work-check"><input id="wUnpaid" type="checkbox" ${form.unpaid ? "checked" : ""}> Ücretsiz izin / ücret kesilecek gün</label>` : ""}
+          ${form.attendance === "İzinliyim" ? `<label class="work-check"><input id="wUnpaid" type="checkbox" ${form.unpaid ? "checked" : ""}> Ücretsiz izin</label>` : ""}
+          ${form.attendance === "Gelmedim" ? '<p class="work-help">Gelinmeyen günün temel ücreti kazanca eklenmez.</p>' : ""}
           <p style="font-size:12px;color:var(--text-muted);margin:12px 0 6px">Mesai</p>
           <div class="choice-group">
             ${choice("overtime","Mesai yok","no","Mesai yapmadım")}
@@ -126,25 +127,18 @@ window.Warman = window.Warman || {};
           </div>
           <div class="field" style="margin-top:12px"><label>Açıklama (isteğe bağlı)</label><textarea id="wDesc">${U().escapeHtml(form.description)}</textarea></div>
           <button class="btn btn-primary" id="wSave" style="margin-top:12px" ${saving ? "disabled" : ""}>${saving ? "Kaydediliyor…" : "Kaydı kaydet"}</button>
+          <p class="work-help">Tarihi ve durumu seçip kaydettiğinde maaş toplamı güncellenir. Aynı tarihi tekrar kaydetmek o günün kaydını değiştirir.</p>
         </section>
         <section class="card panel-pad">
           <h3 class="panel-title">Aylık maaş özeti <span class="badge badge-planned">${summary.basis === "gross" ? "Brüt hesap" : "Net tahmin"}</span></h3>
-          <div class="payroll-total"><span>Şu ana kadar biriken maaş</span><strong id="salaryAccrued">${money(summary.accruedTotal)}</strong><small>Ayın ${summary.daysInMonth} gününün ${summary.accruedDays} günü · BES ve işaretlenen kesintiler düşülmüş tutar</small></div>
+          <div class="payroll-total" aria-live="polite" aria-atomic="true"><span>Kayıtlara göre biriken maaş</span><strong id="salaryAccrued">${money(summary.accruedTotal)}</strong><small>${summary.recordedDays} kayıtlı gün · ${summary.payableDays} ücretli gün · BES sonrası</small></div>
           <div class="payroll-daily"><span>Bir tam günün ücreti <small>BES sonrası</small></span><strong id="dailySalary">${money(summary.netDailyRate)}</strong></div>
           <dl class="payroll-lines">
-            <div><dt>Şu ana kadarki temel ücret <small>${summary.accruedDays} gün × ${money(summary.dailyRate)}</small></dt><dd>${money(summary.accruedBaseSalary)}</dd></div>
-            <div><dt>Şu ana kadarki mesai ve tatil ekleri</dt><dd class="payroll-positive">+ ${money(summary.accruedOvertimePay + summary.accruedHolidayPay)}</dd></div>
-            <div><dt>Şu ana kadarki BES <small>%${hoursText(summary.besRate)} · maaş üzerinden</small></dt><dd>− ${money(summary.accruedBesDeduction)}</dd></div>
-            <div><dt>Şu ana kadarki ücretsiz gün kesintisi</dt><dd>− ${money(summary.accruedDeductions)}</dd></div>
+            <div><dt>Kayıtlı günlerin temel ücreti <small>${summary.recordedDays} gün × ${money(summary.dailyRate)}</small></dt><dd>${money(summary.accruedBaseSalary)}</dd></div>
+            <div><dt>Mesai ve tatil ekleri</dt><dd class="payroll-positive">+ ${money(summary.accruedOvertimePay + summary.accruedHolidayPay)}</dd></div>
+            <div><dt>Ücretsiz izin ve gelinmeyen gün</dt><dd>− ${money(summary.accruedDeductions)}</dd></div>
+            <div><dt>BES kesintisi <small>%${hoursText(summary.besRate)} · kazanılan temel ücret üzerinden</small></dt><dd>− ${money(summary.accruedBesDeduction)}</dd></div>
           </dl>
-          <details class="salary-projection"><summary>Ay sonu toplamını göster</summary><dl class="payroll-lines">
-            <div><dt>Aylık temel ücret</dt><dd>${money(summary.baseSalary)}</dd></div>
-            <div><dt>Fazla mesai <small>${hoursText(summary.overtimeHours)} saat × ${summary.overtimeMultiplier}</small></dt><dd class="payroll-positive">+ ${money(summary.overtimePay)}</dd></div>
-            <div><dt>Resmi tatil ek ücreti <small>${hoursText(summary.holidayDays)} gün</small></dt><dd class="payroll-positive">+ ${money(summary.holidayPay)}</dd></div>
-            <div><dt>Ücretsiz gün kesintisi <small>${hoursText(summary.unpaidDays)} gün</small></dt><dd>− ${money(summary.deductions)}</dd></div>
-            <div><dt>BES kesintisi <small>%${hoursText(summary.besRate)}</small></dt><dd>− ${money(summary.besDeduction)}</dd></div>
-            <div><dt>Ay sonu toplamı <small>Kaydedilen ek ödemelerle</small></dt><dd id="salaryTotal">${money(summary.total)}</dd></div>
-          </dl></details>
           <div class="stat-grid">
             <article class="stat-card"><div class="k">Çalışılan gün</div><div class="v">${st.geldi}</div></article>
             <article class="stat-card"><div class="k">Mesai yapılan saat</div><div class="v">${hoursText(st.mesai)}</div></article>
@@ -152,8 +146,8 @@ window.Warman = window.Warman || {};
             <article class="stat-card"><div class="k">Gelinmeyen gün</div><div class="v">${st.gelmedi}</div></article>
           </div>
           <p class="work-help">Günlük temel ücret: ${money(summary.baseSalary)} / ${summary.daysInMonth} gün = ${money(summary.dailyRate)}. Mesai saati ücreti: ${money(summary.hourlyRate * summary.overtimeMultiplier)}.</p>
-          <p class="work-help">Biriken temel maaş, ayın başından bugüne kadar geçen takvim günleri üzerinden hesaplanır. Çalışılan gün sayısı kaydettiğin günleri gösterir.</p>
-          ${!records.length ? '<p class="work-notice">Bu ay henüz iş kaydı yok. Biriken temel maaş gösterilir; mesai ve tatil ekleri kayıt girdikçe eklenir.</p>' : ""}
+          <p class="work-help">Toplam, seçili aydaki kayıtlı günlerden hesaplanır. İşe geldiğin gün ve ücretli izin maaşa eklenir; gelinmeyen gün ve ücretsiz izin eklenmez.</p>
+          ${!records.length ? '<p class="work-notice">Bu ay henüz kayıt yok; toplam 0 ₺. İlk çalışma gününü kaydettiğinde günlük kazancın eklenecek.</p>' : ""}
           ${summary.warnings.map((w) => `<p class="work-notice">${U().escapeHtml(w)}</p>`).join("")}
           <button class="btn work-spaced" id="salaryDetails"><i class="ph ph-receipt"></i> Hesap dökümünü aç</button>
           ${salarySettingsHtml(ps, summary)}
@@ -583,22 +577,15 @@ window.Warman = window.Warman || {};
     overlay.className = "modal-overlay";
     overlay.innerHTML = `<div class="modal payroll-modal" role="dialog" aria-modal="true" aria-labelledby="payrollTitle"><h3 id="payrollTitle">${U().MONTHS[summary.month - 1]} ${summary.year} · Maaş dökümü</h3>
       <p>${summary.basis === "gross" ? "Brüt maaş üzerinden kişisel takip hesabı; vergi ve SGK kesintileri düşülmez." : "Net maaş üzerinden tahmini ödeme hesabı."} Günlük temel ücret = aylık maaş / ${summary.daysInMonth} gün.</p>
-      <div class="payroll-total"><span>Şu ana kadar biriken maaş · ${summary.accruedDays} / ${summary.daysInMonth} gün</span><strong>${money(summary.accruedTotal)}</strong></div>
+      <div class="payroll-total"><span>Kayıtlara göre biriken maaş · ${summary.recordedDays} kayıtlı gün</span><strong>${money(summary.accruedTotal)}</strong></div>
       <div class="payroll-daily"><span>Bir tam günün ücreti <small>BES sonrası</small></span><strong>${money(summary.netDailyRate)}</strong></div>
       <dl class="payroll-lines">
-        <div><dt>Şu ana kadarki temel ücret</dt><dd>${money(summary.accruedBaseSalary)}</dd></div>
-        <div><dt>Şu ana kadarki mesai ve tatil ekleri</dt><dd>+ ${money(summary.accruedOvertimePay + summary.accruedHolidayPay)}</dd></div>
-        <div><dt>Şu ana kadarki ücretsiz gün kesintisi</dt><dd>− ${money(summary.accruedDeductions)}</dd></div>
-        <div><dt>Şu ana kadarki BES · %${hoursText(summary.besRate)}</dt><dd>− ${money(summary.accruedBesDeduction)}</dd></div>
-      </dl>
-      <h4 class="work-spaced">Ay sonu hesabı</h4>
-      <dl class="payroll-lines">
-        <div><dt>Tam aylık temel ücret</dt><dd>${money(summary.baseSalary)}</dd></div>
+        <div><dt>Kayıtlı ${summary.recordedDays} günün temel ücreti</dt><dd>${money(summary.accruedBaseSalary)}</dd></div>
         <div><dt>Fazla mesai · ${hoursText(summary.overtimeHours)} saat × ${money(summary.hourlyRate)} × ${summary.overtimeMultiplier}</dt><dd>+ ${money(summary.overtimePay)}</dd></div>
         <div><dt>Resmi tatil · ${hoursText(summary.holidayDays)} gün × ${money(summary.dailyRate)}</dt><dd>+ ${money(summary.holidayPay)}</dd></div>
-        <div><dt>Ücretsiz gün · ${summary.unpaidDays} gün</dt><dd>− ${money(summary.deductions)}</dd></div>
+        <div><dt>Ücretsiz izin / gelinmeyen gün · ${summary.unpaidDays} gün</dt><dd>− ${money(summary.deductions)}</dd></div>
         <div><dt>BES kesintisi · %${hoursText(summary.besRate)}</dt><dd>− ${money(summary.besDeduction)}</dd></div>
-        <div><dt>Kaydedilen ek ödemelerle ay sonu toplamı</dt><dd>${money(summary.total)}</dd></div>
+        <div><dt>Kayıtlara göre toplam kazanç</dt><dd>${money(summary.total)}</dd></div>
       </dl>
       <div class="stat-grid">
         <div class="card stat-card"><div class="k">Çalışılan gün</div><div class="v">${st.geldi}</div></div>
@@ -606,12 +593,12 @@ window.Warman = window.Warman || {};
         <div class="card stat-card"><div class="k">İzinli gün</div><div class="v">${st.izinli}</div></div>
         <div class="card stat-card"><div class="k">Gelinmeyen gün</div><div class="v">${st.gelmedi}</div></div>
       </div>
-      <p class="work-help">Biriken maaş ayın başından bugüne kadar geçen takvim günlerini içerir. Gelecek tarihli mesai ve tatil ekleri ay sonu hesabında gösterilir. Kayıt girilmeyen günler ve ücretli izin için otomatik kesinti yapılmaz.</p>
-      <div class="table-wrap work-spaced"><table class="data"><thead><tr><th>Tarih</th><th>Gün</th><th>Günlük temel ücret</th><th>Mesai saati</th><th>Mesai ücreti</th><th>Tatil ek ücreti</th><th>Ücretsiz gün</th><th>BES</th><th>Günlük kazanç</th></tr></thead><tbody>
+      <p class="work-help">Toplam yalnızca aşağıdaki kayıtlı günlerin kazancıdır. Kayıtsız günler 0 kabul edilir. Seçili aya kaydettiğin geçmiş veya gelecek tarihli günler aynı şekilde hesaplanır.</p>
+      <div class="table-wrap work-spaced"><table class="data"><thead><tr><th>Tarih</th><th>Gün</th><th>Günlük temel ücret</th><th>Mesai saati</th><th>Mesai ücreti</th><th>Tatil ek ücreti</th><th>Ücretsiz / gelinmeyen</th><th>BES</th><th>Günlük kazanç</th></tr></thead><tbody>
         ${summary.details.map((d) => `<tr><td>${U().escapeHtml(d.date)}</td><td>${U().escapeHtml(d.holidayName || d.record.attendance)}</td><td>${money(d.dailyBasePay)}</td><td>${hoursText(d.overtimeHours)}</td><td>${money(d.overtimePay)}</td><td>${money(d.holidayPay)}</td><td>${money(d.deduction)}</td><td>${money(d.besDeduction)}</td><td>${money(d.netDailyPay)}</td></tr>`).join("") || '<tr><td colspan="9">Bu ay henüz kayıt yok.</td></tr>'}
       </tbody></table></div>
       <p class="work-help">Resmi tatilde çalışılan güne ek 1 günlük ücret, yarım gün tatil seçimine ek ½ günlük ücret yazılır. Mesaiye girdiğin saat doğrudan kullanılır.</p>
-      <p class="work-help">BES, seçilen temel maaştan ücretsiz gün kesintisi düşüldükten sonra %${hoursText(summary.besRate)} olarak tahmin edilir; mesai ve tatil eklerine uygulanmaz. Gerçek bordro kesintisine göre oranı ayarlayabilirsin.</p>
+      <p class="work-help">BES, kayıtlı günlerde kazanılan temel ücretten %${hoursText(summary.besRate)} olarak tahmin edilir; mesai ve tatil eklerine uygulanmaz. Gerçek bordro kesintisine göre oranı ayarlayabilirsin.</p>
       ${summary.warnings.map((w) => `<p class="work-notice">${U().escapeHtml(w)}</p>`).join("")}
       <p class="work-help">Kaynaklar: <a href="${P().sources.minimumWage}" target="_blank" rel="noopener noreferrer">ÇSGB asgari ücret</a> · <a href="${P().sources.bes}" target="_blank" rel="noopener noreferrer">EGM BES bilgisi</a> · <a href="${summary.year === 2025 ? P().sources.religious2025 : P().sources.religious2026}" target="_blank" rel="noopener noreferrer">Diyanet bayram takvimi</a></p>
       <div class="modal-actions" style="margin-top:16px"><button class="btn" data-payroll-csv>Maaş dökümü indir</button><button class="btn btn-primary" data-x>Kapat</button></div></div>`;
@@ -619,10 +606,10 @@ window.Warman = window.Warman || {};
     overlay.querySelector("[data-payroll-csv]").onclick = () => {
       const rows = [
         ["Maaş dönemi", selectedMonth], ["Hesap temeli", summary.basis === "gross" ? "Brüt" : "Net tahmin"],
-        ["Aylık temel ücret", summary.baseSalary], ["Mesai ücreti", summary.overtimePay],
-        ["Tatil ek ücreti", summary.holidayPay], ["Ücretsiz gün kesintisi", summary.deductions], ["Toplam", summary.total], [],
-        ["BES kesintisi", summary.besDeduction], ["Biriken maaş", summary.accruedTotal], ["Geçen gün", summary.accruedDays], ["Ayın gün sayısı", summary.daysInMonth], [],
-        ["Tarih", "Durum", "Günlük temel ücret", "Mesai saati", "Mesai ücreti", "Tatil ek ücreti", "Ücretsiz gün", "BES", "Günlük kazanç"],
+        ["Aylık maaş referansı", summary.baseSalary], ["Kayıtlı günlerin temel ücreti", summary.accruedBaseSalary], ["Mesai ücreti", summary.overtimePay],
+        ["Tatil ek ücreti", summary.holidayPay], ["Ücretsiz / gelinmeyen gün", summary.deductions], ["BES kesintisi", summary.besDeduction], ["Toplam kazanç", summary.total], [],
+        ["Kayıtlı gün", summary.recordedDays], ["Ücretli gün", summary.payableDays], ["Ayın gün sayısı", summary.daysInMonth], [],
+        ["Tarih", "Durum", "Günlük temel ücret", "Mesai saati", "Mesai ücreti", "Tatil ek ücreti", "Ücretsiz / gelinmeyen", "BES", "Günlük kazanç"],
         ...summary.details.map((d) => [d.date, d.holidayName || d.record.attendance, d.dailyBasePay, d.overtimeHours, d.overtimePay, d.holidayPay, d.deduction, d.besDeduction, d.netDailyPay])
       ];
       U().download(`maas-dokumu-${selectedMonth}.csv`, "\uFEFF" + rows.map((r) => r.map(csvCell).join(";")).join("\r\n"), "text/csv;charset=utf-8");
