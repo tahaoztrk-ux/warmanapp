@@ -275,7 +275,7 @@ window.Warman = window.Warman || {};
 
   function otSymbol(val, hours) {
     if (val === "Mesai yaptım") {
-      const h = hours ? hoursText(U().parseHours(hours)) : "";
+      const h = hours != null && hours !== "" ? hoursText(U().parseHours(hours)) : "";
       return `<span class="track-sym yes hours" title="Mesai yaptım${h ? " · " + h + " saat" : ""}"><i class="ph-bold ph-check"></i>${h ? U().escapeHtml(h) : ""}</span>`;
     }
     return `<span class="track-sym no" title="Mesai yapmadım"><i class="ph-bold ph-x"></i></span>`;
@@ -391,7 +391,7 @@ window.Warman = window.Warman || {};
     form.date = r.date;
     form.attendance = r.attendance;
     form.overtime = r.overtime;
-    form.hours = r.overtime_hours || "";
+    form.hours = r.overtime_hours ?? "";
     form.location = r.location;
     form.description = r.description || "";
     form.editingId = r.id;
@@ -424,7 +424,7 @@ window.Warman = window.Warman || {};
     if (!r) return Warman.ui.toast("Dünün kaydı yok.");
     form.attendance = r.attendance;
     form.overtime = r.overtime;
-    form.hours = r.overtime_hours || "";
+    form.hours = r.overtime_hours ?? "";
     form.location = r.location;
     form.description = r.description || "";
     form.date = U().todayStr();
