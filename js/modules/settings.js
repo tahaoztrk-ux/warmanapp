@@ -52,8 +52,8 @@ window.Warman = window.Warman || {};
           <div class="field"><label>Varsayılan çalışma yeri</label>
             <select id="sLoc">${Warman.config.locations.map((l)=>`<option ${s.defaultLocation===l?"selected":""}>${l}</option>`).join("")}</select>
           </div>
-          <div class="field"><label>Saatlik ücret (isteğe bağlı, tahmin için)</label><input id="sRate" value="${U().escapeHtml(s.hourlyRate||"")}" placeholder="Örn: 200"></div>
-          <div class="field"><label>Mesai katsayısı</label><input id="sOt" value="${U().escapeHtml(s.overtimeRate||"")}" placeholder="Örn: 1,5"></div>
+          <p class="work-help">Maaş, vardiya, mola ve fazla mesai katsayısını iş ve mesai bölümünden ay bazında ayarlayabilirsin.</p>
+          <button class="btn work-spaced" id="openPayrollSettings">Maaş ve mesai hesabına git</button>
         </section>
         <section class="card panel-pad">
           <h3 class="panel-title">Bildirimler ve profil</h3>
@@ -87,8 +87,7 @@ window.Warman = window.Warman || {};
     bind("#sDue", "defaultDue");
     bind("#sWeek", "weekStartsOn", (el) => Number(el.value));
     bind("#sLoc", "defaultLocation");
-    bind("#sRate", "hourlyRate");
-    bind("#sOt", "overtimeRate");
+    view.querySelector("#openPayrollSettings").onclick = () => Warman.router.go("work");
     view.querySelector("#sNotif").onchange = async (e) => {
       if (e.target.checked && "Notification" in window) {
         const perm = await Notification.requestPermission();
@@ -101,7 +100,7 @@ window.Warman = window.Warman || {};
     };
     view.querySelector("#exportAll").onclick = () => {
       const st = Warman.store.get();
-      U().download("warman-backup.json", JSON.stringify({ projects: st.projects, tasks: st.tasks, work: st.work }, null, 2), "application/json");
+      U().download("warman-backup.json", JSON.stringify({ projects: st.projects, tasks: st.tasks, work: st.work, settings: st.settings }, null, 2), "application/json");
     };
   }
 

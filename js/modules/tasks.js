@@ -51,14 +51,15 @@ window.Warman = window.Warman || {};
   async function persist(task, silent) {
     task.updated_at = new Date().toISOString();
     const saved = await Warman.api.saveTask(task);
-    const list = Warman.store.get().tasks;
+    const list = [...Warman.store.get().tasks];
     const idx = list.findIndex((t) => Number(t.id) === Number(task.id));
-    if (idx >= 0) list[idx] = { ...list[idx], ...saved, ...task };
-    else list.unshift(task);
+    const confirmed = { ...task, ...saved };
+    if (idx >= 0) list[idx] = confirmed;
+    else list.unshift(confirmed);
     Warman.store.set({ tasks: list });
     if (!silent) Warman.store.log(`Görev güncellendi: ${task.title}`, "task");
-    Warman.projects.syncFromTask(task);
-    return task;
+    Warman.projects.syncFromTask(confirmed);
+    return confirmed;
   }
 
   async function createFromTitle(rawTitle, extras) {
@@ -73,15 +74,11 @@ window.Warman = window.Warman || {};
       if (parsed.suggestion.priority) task.priority = parsed.suggestion.priority;
     }
     if (!task.title) return null;
-    const list = Warman.store.get().tasks;
-    list.unshift(task);
-    Warman.store.set({ tasks: list });
     try {
-      await persist(task, true);
+      const saved = await persist(task, true);
       Warman.store.log(`Görev eklendi: ${task.title}`, "task");
-      return task;
+      return saved;
     } catch (err) {
-      Warman.store.set({ tasks: list.filter((t) => t.id !== task.id) });
       Warman.ui.toast("Görev kaydedilemedi: " + err.message, "error");
       return null;
     }
@@ -96,15 +93,11 @@ window.Warman = window.Warman || {};
     try {
       await Warman.api.deleteTask(id);
       Warman.ui.offerUndo("Görev silindi.", async () => {
-        const restored = Warman.store.get().tasks;
-        restored.unshift(task);
-        Warman.store.set({ tasks: restored });
         await persist(task, true);
         Warman.router.refresh();
       });
       Warman.router.refresh();
     } catch (err) {
-      list.unshift(task);
       Warman.store.set({ tasks: Warman.store.get().tasks.concat([task]) });
       Warman.ui.toast("Silinemedi: " + err.message, "error");
       Warman.router.refresh();

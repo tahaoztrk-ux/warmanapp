@@ -14,6 +14,50 @@
 .inbox-cta { margin-bottom: 16px; }
 
 .work-quick { display: grid; grid-template-columns: 1.1fr .9fr; gap: 16px; }
+.work-quick > * { min-width: 0; }
+.work-period-bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 16px; margin-bottom: 16px; }
+.work-period-bar strong { font-size: 13px; }
+.work-period-bar p { font-size: 12px; color: var(--text-muted); margin-top: 4px; }
+.work-month-nav { display: flex; gap: 6px; align-items: center; }
+.work-month-nav input { color: var(--text); background: var(--surface-2); border: 1px solid var(--border); border-radius: 8px; padding: 8px; font: inherit; max-width: 190px; }
+.work-shift-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin-top: 14px; }
+.work-shift-grid[hidden] { display: none; }
+.work-help { color: var(--text-muted); font-size: 12px; line-height: 1.65; margin-top: 10px; }
+.work-help a { color: var(--primary); text-decoration: underline; }
+.work-spaced { margin-top: 14px; }
+.work-check { display: flex; gap: 8px; align-items: center; margin-top: 14px; font-size: 12px; }
+.work-notice { margin-top: 12px; padding: 10px 12px; border-radius: 8px; background: var(--warning-soft); color: var(--warning); font-size: 12px; line-height: 1.6; }
+.payroll-total { background: var(--primary-soft); padding: 18px; border-radius: 12px; display: grid; gap: 8px; }
+.payroll-total > span { font-size: 12px; color: var(--text-muted); }
+.payroll-total > strong { font-size: clamp(26px, 3vw, 36px); color: var(--primary); letter-spacing: -.04em; font-variant-numeric: tabular-nums; }
+.payroll-total small { font-size: 11px; color: var(--text-muted); line-height: 1.5; }
+.payroll-lines { margin: 14px 0; }
+.payroll-lines > div { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--border); font-size: 13px; }
+.payroll-lines dt { color: var(--text-muted); }
+.payroll-lines dt small { display: block; font-size: 11px; margin-top: 3px; }
+.payroll-lines dd { font-weight: 700; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.payroll-positive { color: var(--success); }
+.work-quick .stat-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px; }
+.work-quick .stat-card { padding: 10px; }
+.salary-settings { margin-top: 20px; border-top: 1px solid var(--border); padding-top: 14px; }
+.salary-settings summary { font-size: 13px; font-weight: 650; cursor: pointer; color: var(--primary); }
+.work-settings-fields { display: grid; gap: 12px; margin-top: 12px; }
+.work-settings-fields .work-shift-grid { margin-top: 0; }
+.work-table { min-width: 940px !important; }
+.work-table small { color: var(--text-muted); font-size: 11px; }
+.payroll-modal { width: min(1020px, 100%); max-height: calc(100dvh - 32px); overflow-y: auto; }
+.payroll-modal > p { font-size: 12px; line-height: 1.6; }
+.payroll-modal .stat-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+@media (max-width: 640px) {
+  .work-period-bar { align-items: flex-start; flex-direction: column; }
+  .work-month-nav { width: 100%; justify-content: space-between; }
+  .work-month-nav input { flex: 1; max-width: none; }
+  .payroll-modal .stat-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .payroll-modal .payroll-lines > div { font-size: 12px; }
+  .work-shift-grid { gap: 6px; }
+  .work-shift-grid input { padding: 8px 4px; }
+  .payroll-modal .modal-actions { flex-wrap: wrap; }
+}
 .choice-group { display: flex; flex-wrap: wrap; gap: 8px; }
 .choice {
   min-height: 42px; padding: 8px 12px; border-radius: 10px;

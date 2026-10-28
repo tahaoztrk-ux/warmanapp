@@ -1,15 +1,34 @@
 window.Warman = window.Warman || {};
 (function () {
   const U = () => Warman.utils;
+  const P = () => Warman.payroll;
   let archiveView = "active";
+  let selectedMonth = "";
+  let saving = false;
   const form = {
     date: "", attendance: "İşe geldim", overtime: "Mesai yapmadım",
-    hours: "", location: "", description: "", editingId: null
+    hours: "", location: "", description: "", editingId: null,
+    startTime: "", endTime: "", breakMinutes: null, holiday: "auto", unpaid: false
   };
 
-  function filtered() {
+  function monthOf(date) {
+    const d = U().parseDotDate(date);
+    return d ? `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}` : "";
+  }
+
+  function monthSettings(month) {
+    const s = Warman.store.get().settings;
+    return { ...P().defaults(Number(month.slice(0, 4))), ...(s.payrollMonths?.[month] || {}) };
+  }
+
+  function money(value) {
+    return Number.isFinite(value) ? value.toLocaleString("tr-TR", { style: "currency", currency: "TRY" }) : "—";
+  }
+
+  function filtered(allMonths) {
     const all = Warman.store.get().work;
-    return all.filter((r) => archiveView === "active" ? !r.archive_id : r.archive_id === archiveView);
+    return all.filter((r) => (archiveView === "active" ? !r.archive_id : r.archive_id === archiveView)
+      && (allMonths || monthOf(r.date) === selectedMonth));
   }
 
   function archives() {
@@ -31,17 +50,28 @@ window.Warman = window.Warman || {};
 
   function render(view, opts) {
     opts = opts || {};
-    if (opts.archive) archiveView = archiveView === "active" && archives()[0] ? archives()[0] : archiveView;
+    if (opts.archive && archiveView === "active" && archives()[0]) {
+      archiveView = archives()[0];
+      selectedMonth = filtered(true).map((r) => monthOf(r.date)).filter(Boolean).sort().pop() || "";
+    }
     const s = Warman.store.get().settings;
+    selectedMonth = selectedMonth || monthOf(U().todayStr());
     form.date = form.date || U().todayStr();
     form.location = form.location || s.defaultLocation || "Merkez";
+    const ps = monthSettings(selectedMonth);
+    const fs = monthSettings(monthOf(form.date) || selectedMonth);
+    form.startTime = form.startTime || fs.payrollStartTime;
+    form.endTime = form.endTime || fs.payrollEndTime;
+    form.breakMinutes = form.breakMinutes ?? fs.payrollBreakMinutes;
     const records = filtered();
-    const st = stats(records);
+    const summary = P().summarize(records, ps, selectedMonth);
+    const st = { ...stats(summary.records), mesai: summary.overtimeHours };
+    const holiday = P().holidayForDate(form.date);
     view.innerHTML = `
       <div class="view-head">
         <div>
           <h1>${archiveView === "active" ? "İş ve mesai takibi" : "Arşiv: " + U().escapeHtml(archiveView)}</h1>
-          <p>Görev planlamasından ayrıdır. Tarih varsayılan olarak bugündür.</p>
+          <p>Günlük çalışmanı kaydet, aylık ücretini ve mesai karşılığını takip et.</p>
         </div>
         <div class="view-actions">
           <select id="archiveSelect" class="filter-select">
@@ -50,45 +80,79 @@ window.Warman = window.Warman || {};
           </select>
           <button class="btn" id="copyYest">Dünü kopyala</button>
           <button class="btn" id="exportExcel"><i class="ph ph-file-xls"></i> Excel</button>
-          <button class="btn" id="showStats">İstatistik</button>
+          <button class="btn" id="showStats">Dönem detayı</button>
           <button class="btn btn-danger" id="closePeriod">Dönemi kapat</button>
         </div>
       </div>
+      <div class="work-period-bar card">
+        <div><strong>Maaş dönemi</strong><p>Özet ve kayıt listesi seçtiğin aya aittir.</p></div>
+        <div class="work-month-nav"><button class="icon-btn" id="prevMonth" aria-label="Önceki ay"><i class="ph ph-caret-left"></i></button>
+          <input type="month" id="salaryMonth" aria-label="Maaş dönemi" value="${selectedMonth}" min="2000-01" max="2100-12">
+          <button class="icon-btn" id="nextMonth" aria-label="Sonraki ay"><i class="ph ph-caret-right"></i></button></div>
+      </div>
       <div class="work-quick">
         <section class="card panel-pad">
-          <h3 class="panel-title">Hızlı günlük kayıt</h3>
-          <div class="field"><label>Tarih</label><input id="wDate" value="${U().escapeHtml(form.date)}"></div>
+          <h3 class="panel-title">${form.editingId ? "Günlük kaydı düzenle" : "Günlük çalışma kaydı"}${form.editingId ? '<button class="btn btn-sm" id="cancelEdit">Vazgeç</button>' : ""}</h3>
+          <div class="field"><label for="wDate">Tarih</label><input id="wDate" value="${U().escapeHtml(form.date)}" placeholder="gg.aa.yyyy"></div>
           <p style="font-size:12px;color:var(--text-muted);margin:8px 0 6px">İşe gelme</p>
           <div class="choice-group">
             ${choice("attendance","İşe geldim","yes","İşe geldim")}
             ${choice("attendance","İzinliyim","leave","İzinliyim")}
             ${choice("attendance","Gelmedim","no","Gelmedim")}
           </div>
+          <div class="work-shift-grid" ${form.attendance !== "İşe geldim" ? "hidden" : ""}>
+            <div class="field"><label for="wStart">Giriş</label><input type="time" id="wStart" value="${U().escapeHtml(form.startTime)}"></div>
+            <div class="field"><label for="wEnd">Çıkış</label><input type="time" id="wEnd" value="${U().escapeHtml(form.endTime)}"></div>
+            <div class="field"><label for="wBreak">Mola (dk)</label><input type="number" id="wBreak" min="0" max="1439" step="1" value="${U().escapeHtml(form.breakMinutes)}"></div>
+          </div>
+          <p class="work-help">Varsayılan vardiya 08.30–18.30, mola 60 dakika. Süreleri değiştirebilirsin. Fazla mesaiyi ayrıca gir.</p>
+          <div class="field work-spaced"><label for="wHoliday">Resmi tatil</label>
+            <select id="wHoliday">
+              <option value="auto" ${form.holiday === "auto" ? "selected" : ""}>Takvimden belirle${holiday.fraction ? " · " + U().escapeHtml(holiday.name) : " · Normal gün"}</option>
+              <option value="0" ${form.holiday === "0" ? "selected" : ""}>Normal gün</option>
+              <option value="1" ${form.holiday === "1" ? "selected" : ""}>Resmi tatil · tam gün</option>
+              <option value="0.5" ${form.holiday === "0.5" ? "selected" : ""}>Resmi tatil · yarım gün (13.00 sonrası)</option>
+            </select>
+          </div>
+          <p class="work-help">Tatilde çalışırsan aylık ücrete ek 1 günlük ücret; yarım gün için ek ½ günlük ücret hesaplanır.</p>
+          ${form.attendance !== "İşe geldim" ? `<label class="work-check"><input id="wUnpaid" type="checkbox" ${form.unpaid ? "checked" : ""}> Ücretsiz izin / ücret kesilecek gün</label>` : ""}
           <p style="font-size:12px;color:var(--text-muted);margin:12px 0 6px">Mesai</p>
           <div class="choice-group">
             ${choice("overtime","Mesai yok","no","Mesai yapmadım")}
             ${choice("overtime","Mesai var","yes","Mesai yaptım")}
           </div>
           <div class="field" id="hoursWrap" style="margin-top:10px;${form.overtime==="Mesai yaptım"?"":"display:none"}">
-            <label>Kaç saat? (1,5 veya 1:30)</label>
-            <input id="wHours" value="${U().escapeHtml(form.hours)}" placeholder="1,5">
+            <label for="wHours">Normal vardiya dışında fazla mesai (1,5 veya 1:30)</label>
+            <input id="wHours" value="${U().escapeHtml(form.hours)}" placeholder="1,5" inputmode="decimal">
+            <p class="work-help">Tatildeki normal çalışmayı buraya tekrar yazma. Ek süre varsa çıkış saatini de güncelle. Haftalık 45 saati aşan süreyi gir.</p>
           </div>
           <p style="font-size:12px;color:var(--text-muted);margin:12px 0 6px">Çalışma yeri</p>
           <div class="choice-group">
             ${Warman.config.locations.map((l) => `<button class="choice ${form.location===l?"active info":""}" data-k="location" data-v="${U().escapeHtml(l)}">${U().escapeHtml(l)}</button>`).join("")}
           </div>
           <div class="field" style="margin-top:12px"><label>Açıklama (isteğe bağlı)</label><textarea id="wDesc">${U().escapeHtml(form.description)}</textarea></div>
-          <button class="btn btn-primary" id="wSave" style="margin-top:12px">Kaydı kaydet</button>
+          <button class="btn btn-primary" id="wSave" style="margin-top:12px" ${saving ? "disabled" : ""}>${saving ? "Kaydediliyor…" : "Kaydı kaydet"}</button>
         </section>
         <section class="card panel-pad">
-          <h3 class="panel-title">Dönem özeti</h3>
+          <h3 class="panel-title">Aylık maaş özeti <span class="badge badge-planned">${summary.basis === "gross" ? "Brüt hesap" : "Net tahmin"}</span></h3>
+          <div class="payroll-total"><span>Hesaplanan aylık toplam</span><strong id="salaryTotal">${money(summary.total)}</strong><small>Tam aylık ücret + ek ödemeler − işaretlenen kesintiler</small></div>
+          <dl class="payroll-lines">
+            <div><dt>Aylık temel ücret</dt><dd>${money(summary.baseSalary)}</dd></div>
+            <div><dt>Fazla mesai <small>${U().formatHours(summary.overtimeHours)} saat × ${summary.overtimeMultiplier}</small></dt><dd class="payroll-positive">+ ${money(summary.overtimePay)}</dd></div>
+            <div><dt>Resmi tatil ek ücreti <small>${U().formatHours(summary.holidayDays)} gün</small></dt><dd class="payroll-positive">+ ${money(summary.holidayPay)}</dd></div>
+            <div><dt>Ücretsiz gün kesintisi <small>${U().formatHours(summary.unpaidDays)} gün</small></dt><dd>− ${money(summary.deductions)}</dd></div>
+          </dl>
           <div class="stat-grid">
             <article class="stat-card"><div class="k">Çalışılan</div><div class="v">${st.geldi}</div></article>
             <article class="stat-card"><div class="k">Mesai</div><div class="v">${U().formatHours(st.mesai)}</div></article>
             <article class="stat-card"><div class="k">İzinli</div><div class="v">${st.izinli}</div></article>
             <article class="stat-card"><div class="k">Gelmedi</div><div class="v">${st.gelmedi}</div></article>
           </div>
-          ${s.hourlyRate ? `<p style="margin-top:12px;font-size:12px;color:var(--text-muted)">Tahmini mesai ücreti (ayarlarınıza göre, kesin maaş değildir): ${estimatePay(st.mesai, s)} ₺</p>` : ""}
+          <p class="work-help">Günlük ücret: ${money(summary.dailyRate)} · Saatlik ücret: ${money(summary.hourlyRate)}</p>
+          ${!records.length ? '<p class="work-notice">Bu ay henüz kayıt yok. Temel ücret tam ay kabul edilir; ek ödemeler kayıt girdikçe hesaplanır.</p>' : ""}
+          ${summary.warnings.map((w) => `<p class="work-notice">${U().escapeHtml(w)}</p>`).join("")}
+          <button class="btn work-spaced" id="salaryDetails"><i class="ph ph-receipt"></i> Hesap dökümünü aç</button>
+          ${salarySettingsHtml(ps, summary)}
         </section>
       </div>
       <div class="card table-wrap" style="margin-top:16px">${table(records)}</div>
@@ -100,14 +164,33 @@ window.Warman = window.Warman || {};
         render(view, opts);
       };
     });
-    view.querySelector("#wDate").onchange = (e) => form.date = e.target.value;
+    view.querySelector("#wDate").onchange = (e) => { form.date = e.target.value; render(view, opts); };
+    [["#wStart", "startTime"], ["#wEnd", "endTime"], ["#wBreak", "breakMinutes"]].forEach(([id, key]) => {
+      view.querySelector(id).oninput = (e) => form[key] = key === "breakMinutes" ? Number(e.target.value) : e.target.value;
+    });
+    view.querySelector("#wHoliday").onchange = (e) => form.holiday = e.target.value;
+    view.querySelector("#wUnpaid")?.addEventListener("change", (e) => form.unpaid = e.target.checked);
     view.querySelector("#wHours")?.addEventListener("input", (e) => form.hours = e.target.value);
     view.querySelector("#wDesc").oninput = (e) => form.description = e.target.value;
     view.querySelector("#wSave").onclick = () => save(view);
-    view.querySelector("#archiveSelect").onchange = (e) => { archiveView = e.target.value; render(view, opts); };
+    view.querySelector("#archiveSelect").onchange = (e) => {
+      archiveView = e.target.value;
+      if (archiveView !== "active") selectedMonth = filtered(true).map((r) => monthOf(r.date)).filter(Boolean).sort().pop() || selectedMonth;
+      resetForm(); render(view);
+    };
+    view.querySelector("#salaryMonth").onchange = (e) => { if (/^\d{4}-\d{2}$/.test(e.target.value)) { selectedMonth = e.target.value; render(view, opts); } };
+    const moveMonth = (n) => {
+      const d = new Date(Number(selectedMonth.slice(0, 4)), Number(selectedMonth.slice(5)) - 1 + n, 1);
+      selectedMonth = monthOf(U().toDotDate(d)); render(view, opts);
+    };
+    view.querySelector("#prevMonth").onclick = () => moveMonth(-1);
+    view.querySelector("#nextMonth").onclick = () => moveMonth(1);
     view.querySelector("#copyYest").onclick = () => copyYesterday(view);
     view.querySelector("#exportExcel").onclick = openExportModal;
     view.querySelector("#showStats").onclick = () => showStats(st);
+    view.querySelector("#salaryDetails").onclick = () => showStats(st);
+    view.querySelector("#cancelEdit")?.addEventListener("click", () => { resetForm(); render(view, opts); });
+    bindSalarySettings(view);
     view.querySelector("#closePeriod").onclick = closePeriod;
     view.querySelectorAll("[data-edit]").forEach((b) => b.onclick = () => loadEdit(b.dataset.edit, view));
     view.querySelectorAll("[data-del]").forEach((b) => b.onclick = () => del(b.dataset.del, view));
@@ -125,6 +208,71 @@ window.Warman = window.Warman || {};
   function choice(k, label, cls, v) {
     const active = form[k] === v ? `active ${cls}` : "";
     return `<button class="choice ${active}" data-k="${k}" data-v="${U().escapeHtml(v)}">${U().escapeHtml(label)}</button>`;
+  }
+
+  function salarySettingsHtml(s, summary) {
+    return `<details class="salary-settings"><summary>Maaş ve vardiya ayarları</summary>
+      <p class="work-help">Ayarlar seçili ay için bu tarayıcıda saklanır. Önceki ayların hesabını değiştirmez.</p>
+      <form id="salarySettingsForm" class="work-settings-fields">
+        <div class="export-grid">
+          <div class="field"><label for="payMode">Ücret türü</label><select id="payMode"><option value="minimum" ${s.payrollSalaryMode === "minimum" ? "selected" : ""}>Asgari ücret</option><option value="custom" ${s.payrollSalaryMode === "custom" ? "selected" : ""}>Kendi maaşım</option></select></div>
+          <div class="field"><label for="payBasis">Hesap temeli</label><select id="payBasis"><option value="net" ${s.payrollSalaryBasis === "net" ? "selected" : ""}>Net · tahmini ödeme</option><option value="gross" ${s.payrollSalaryBasis === "gross" ? "selected" : ""}>Brüt · kesinti öncesi</option></select></div>
+        </div>
+        <div class="field"><label for="paySalary">Aylık ücret (₺)</label><input id="paySalary" inputmode="decimal" value="${U().escapeHtml(s.payrollSalaryMode === "custom" ? s.payrollMonthlySalary : summary.baseSalary ?? "")}" ${s.payrollSalaryMode === "minimum" ? "disabled" : "required"}></div>
+        <div class="work-shift-grid">
+          <div class="field"><label for="payStart">Normal giriş</label><input id="payStart" type="time" value="${U().escapeHtml(s.payrollStartTime)}" required></div>
+          <div class="field"><label for="payEnd">Normal çıkış</label><input id="payEnd" type="time" value="${U().escapeHtml(s.payrollEndTime)}" required></div>
+          <div class="field"><label for="payBreak">Mola (dk)</label><input id="payBreak" type="number" value="${U().escapeHtml(s.payrollBreakMinutes)}" min="0" max="1439" step="1" required></div>
+        </div>
+        <div class="field"><label for="payMultiplier">Fazla mesai katsayısı</label><input id="payMultiplier" type="number" value="${U().escapeHtml(s.payrollOvertimeMultiplier)}" min="1.5" max="5" step="0.05" required></div>
+        <button class="btn btn-primary" type="submit">Bu ayın ayarlarını kaydet</button>
+      </form>
+      <p class="work-help">Net ücret üzerinden ek ödemeler tahminidir. Brüt seçeneğinde vergi ve SGK kesintileri düşülmez. İşe giriş/çıkış kıstı ve hafta tatili farkı bu hesaba dahil değildir.</p>
+    </details>`;
+  }
+
+  function bindSalarySettings(view) {
+    const mode = view.querySelector("#payMode");
+    const amount = view.querySelector("#paySalary");
+    const update = () => {
+      amount.disabled = mode.value === "minimum";
+      amount.required = !amount.disabled;
+      if (amount.disabled) {
+        const s = { ...monthSettings(selectedMonth), payrollSalaryMode: "minimum", payrollSalaryBasis: view.querySelector("#payBasis").value };
+        amount.value = P().rates(s, Number(selectedMonth.slice(0, 4))).baseSalary || "";
+      }
+    };
+    mode.onchange = update;
+    view.querySelector("#payBasis").onchange = update;
+    view.querySelector("#salarySettingsForm").onsubmit = (e) => {
+      e.preventDefault();
+      const next = {
+        payrollSalaryMode: mode.value,
+        payrollSalaryBasis: view.querySelector("#payBasis").value,
+        payrollMonthlySalary: Number(amount.value.trim().replace(",", ".")),
+        payrollStartTime: view.querySelector("#payStart").value,
+        payrollEndTime: view.querySelector("#payEnd").value,
+        payrollBreakMinutes: Number(view.querySelector("#payBreak").value),
+        payrollOvertimeMultiplier: Number(view.querySelector("#payMultiplier").value)
+      };
+      const probe = P().recordDetails({ date: `01.${selectedMonth.slice(5)}.${selectedMonth.slice(0, 4)}`, attendance: "İşe geldim", payroll: { startTime: next.payrollStartTime, endTime: next.payrollEndTime, breakMinutes: next.payrollBreakMinutes } }, next);
+      if (probe.workedHours <= 0 || next.payrollStartTime === next.payrollEndTime || (next.payrollSalaryMode === "custom" && (!Number.isFinite(next.payrollMonthlySalary) || next.payrollMonthlySalary <= 0))) {
+        return Warman.ui.toast("Geçerli bir maaş, vardiya ve mola süresi girin.", "error");
+      }
+      try {
+        const s = Warman.store.get().settings;
+        Warman.store.saveSettings({ payrollMonths: { ...(s.payrollMonths || {}), [selectedMonth]: next } });
+        if (!form.editingId && monthOf(form.date) === selectedMonth) {
+          form.startTime = next.payrollStartTime; form.endTime = next.payrollEndTime; form.breakMinutes = next.payrollBreakMinutes;
+        }
+        Warman.ui.toast("Bu ayın maaş ayarları kaydedildi.", "success");
+        render(view);
+      } catch (err) { Warman.ui.toast("Ayarlar kaydedilemedi: " + err.message, "error"); }
+    };
+  }
+
+  function resetForm() {
+    Object.assign(form, { date: U().todayStr(), attendance: "İşe geldim", overtime: "Mesai yapmadım", hours: "", description: "", editingId: null, startTime: "", endTime: "", breakMinutes: null, holiday: "auto", unpaid: false });
   }
 
   function attSymbol(val) {
@@ -161,15 +309,18 @@ window.Warman = window.Warman || {};
       const d = U().parseDotDate(r.date);
       const my = d ? `${U().MONTHS[d.getMonth()]} ${d.getFullYear()}` : "";
       if (my && my !== cur) {
-        rows += `<tr class="month-sep"><td colspan="6">${U().escapeHtml(my)}</td></tr>`;
+        rows += `<tr class="month-sep"><td colspan="8">${U().escapeHtml(my)}</td></tr>`;
         cur = my;
       }
+      const detail = P().recordDetails(r, monthSettings(monthOf(r.date)));
       rows += `<tr>
         <td>${U().escapeHtml(U().formatDetailedDate(r.date))}</td>
         <td>${attSymbol(r.attendance)}</td>
+        <td>${r.attendance === "İşe geldim" ? `${U().escapeHtml(r.payroll?.startTime || monthSettings(monthOf(r.date)).payrollStartTime)}–${U().escapeHtml(r.payroll?.endTime || monthSettings(monthOf(r.date)).payrollEndTime)}<br><small>${U().formatHours(detail.workedHours)} saat · ${U().escapeHtml(r.payroll?.breakMinutes ?? monthSettings(monthOf(r.date)).payrollBreakMinutes)} dk mola</small>` : "—"}</td>
         <td>${otSymbol(r.overtime, r.overtime_hours)}</td>
-        <td>${locSymbol(r.location)}</td>
-        <td>${r.description ? U().escapeHtml(r.description) : "—"}</td>
+        <td>${detail.holidayFraction ? `<span class="badge badge-waiting">${detail.holidayFraction === 0.5 ? "Yarım gün" : "Resmi tatil"}</span><br><small>${U().escapeHtml(detail.holidayName)}</small>` : "Normal gün"}</td>
+        <td><strong>${money(detail.extraPay)}</strong>${detail.unpaidDays ? '<br><small>Ücretsiz gün kesintisi</small>' : ""}</td>
+        <td>${locSymbol(r.location)} ${r.description ? U().escapeHtml(r.description) : ""}</td>
         <td>
           <button class="icon-btn" data-edit="${r.id}" title="Düzenle"><i class="ph ph-pencil-simple"></i></button>
           <button class="icon-btn" data-del="${r.id}" title="Sil"><i class="ph ph-trash"></i></button>
@@ -187,41 +338,62 @@ window.Warman = window.Warman || {};
       <span>${locSymbol("Saha")} Saha</span>
       <span>${locSymbol("Uzaktan")} Uzaktan</span>
     </div>
-    <table class="data"><thead><tr><th>Tarih</th><th>Gelme</th><th>Mesai</th><th>Yer</th><th>Not</th><th></th></tr></thead><tbody>${rows}</tbody></table>`;
+    <table class="data work-table"><thead><tr><th>Tarih</th><th>Durum</th><th>Çalışma</th><th>Fazla mesai</th><th>Gün türü</th><th>Ek ödeme / kesinti</th><th>Yer / Not</th><th>İşlem</th></tr></thead><tbody>${rows}</tbody></table>`;
   }
 
   async function save(view) {
+    if (saving) return;
     const date = (document.getElementById("wDate")?._flatpickr?.input?.value) || document.getElementById("wDate").value || form.date;
     const attendance = form.attendance;
-    const overtime = form.overtime;
+    const overtime = attendance === "İşe geldim" ? form.overtime : "Mesai yapmadım";
     let hours = overtime === "Mesai yaptım" ? document.getElementById("wHours").value : "";
     const location = form.location;
     const description = document.getElementById("wDesc").value.trim();
     if (!date || !attendance || !overtime || !location) return Warman.ui.toast("Tarih, gelme, mesai ve yer gerekli.");
+    const parsedDate = U().parseDotDate(date);
+    if (!parsedDate || U().toDotDate(parsedDate) !== date) return Warman.ui.toast("Geçerli bir tarih girin (gg.aa.yyyy).", "error");
     if (overtime === "Mesai yaptım" && !hours) return Warman.ui.toast("Mesai saatini girin.");
     const parsed = U().parseHours(hours);
-    if (overtime === "Mesai yaptım" && parsed <= 0) return Warman.ui.toast("Geçerli bir saat girin. Örn: 1,5");
+    if (overtime === "Mesai yaptım" && (!/^(?:\d+(?:[.,]\d+)?|\d+:[0-5]\d)$/.test(hours.trim()) || parsed <= 0 || parsed > 24)) return Warman.ui.toast("Geçerli bir saat girin. Örn: 1,5 veya 1:30", "error");
     const targetArchive = archiveView === "active" ? null : archiveView;
     const all = Warman.store.get().work;
     let record = all.find((r) => r.date === date && (r.archive_id || null) === targetArchive);
     if (form.editingId) record = all.find((r) => Number(r.id) === Number(form.editingId)) || record;
+    if (form.editingId && all.some((r) => r.date === date && (r.archive_id || null) === targetArchive && Number(r.id) !== Number(form.editingId))) return Warman.ui.toast("Bu tarihte başka bir kayıt var. Önce o kaydı düzenleyin.", "error");
+    const holiday = P().holidayForDate(date);
+    const payroll = {
+      startTime: form.startTime, endTime: form.endTime, breakMinutes: form.breakMinutes,
+      holidayFraction: form.holiday === "auto" ? holiday.fraction : Number(form.holiday),
+      holidayName: form.holiday === "auto" ? holiday.name : (form.holiday === "0" ? "" : "Resmi tatil (manuel)"),
+      unpaid: attendance !== "İşe geldim" && form.unpaid
+    };
     const payload = {
       id: record?.id || U().uid(),
       date, attendance, overtime,
       overtime_hours: overtime === "Mesai yaptım" ? String(parsed) : null,
-      location, description, archive_id: targetArchive
+      location, description, archive_id: targetArchive, payroll
     };
+    const detail = P().recordDetails(payload, monthSettings(monthOf(date)));
+    if (attendance === "İşe geldim" && (!/^\d{2}:\d{2}$/.test(form.startTime) || !/^\d{2}:\d{2}$/.test(form.endTime) || form.startTime === form.endTime || !Number.isInteger(form.breakMinutes) || form.breakMinutes < 0 || detail.workedHours <= 0)) return Warman.ui.toast("Giriş, çıkış ve mola sürelerini kontrol edin.", "error");
+    if (parsed > detail.workedHours || (overtime === "Mesai yaptım" && detail.overtimeHours + 0.001 < parsed)) return Warman.ui.toast("Mesai saati çalışma süresiyle uyuşmuyor. Tatilde yalnızca normal vardiya dışındaki ek süreyi girin ve çıkış saatini güncelleyin.", "error");
+    saving = true;
+    view.querySelector("#wSave").disabled = true;
+    view.querySelector("#wSave").textContent = "Kaydediliyor…";
     try {
       const saved = await Warman.api.saveWork(payload);
-      const idx = all.findIndex((r) => Number(r.id) === Number(payload.id));
-      if (idx >= 0) all[idx] = { ...all[idx], ...payload, ...saved };
-      else all.unshift({ ...payload, ...saved });
-      Warman.store.set({ work: all });
-      form.description = ""; form.hours = ""; form.editingId = null;
+      const latest = [...Warman.store.get().work];
+      const idx = latest.findIndex((r) => Number(r.id) === Number(payload.id));
+      if (idx >= 0) latest[idx] = { ...latest[idx], ...payload, ...saved };
+      else latest.unshift({ ...payload, ...saved });
+      Warman.store.set({ work: latest });
+      selectedMonth = monthOf(date);
+      resetForm();
       Warman.ui.toast("İş kaydı kaydedildi.", "success");
-      render(view);
     } catch (err) {
       Warman.ui.toast("Kayıt başarısız: " + err.message, "error");
+    } finally {
+      saving = false;
+      if (document.contains(view) && ["work", "archive"].includes(Warman.router.parse().name)) render(view);
     }
   }
 
@@ -235,6 +407,12 @@ window.Warman = window.Warman || {};
     form.location = r.location;
     form.description = r.description || "";
     form.editingId = r.id;
+    const s = monthSettings(monthOf(r.date));
+    form.startTime = r.payroll?.startTime || s.payrollStartTime;
+    form.endTime = r.payroll?.endTime || s.payrollEndTime;
+    form.breakMinutes = r.payroll?.breakMinutes ?? s.payrollBreakMinutes;
+    form.holiday = r.payroll?.holidayFraction != null ? String(r.payroll.holidayFraction) : "auto";
+    form.unpaid = !!r.payroll?.unpaid;
     render(view);
   }
 
@@ -266,6 +444,12 @@ window.Warman = window.Warman || {};
     form.location = r.location;
     form.description = r.description || "";
     form.date = U().todayStr();
+    form.editingId = null;
+    form.startTime = r.payroll?.startTime || "";
+    form.endTime = r.payroll?.endTime || "";
+    form.breakMinutes = r.payroll?.breakMinutes ?? null;
+    form.holiday = "auto";
+    form.unpaid = !!r.payroll?.unpaid;
     render(view);
     Warman.ui.toast("Dünün ayarları yüklendi. Kaydetmeyi unutmayın.");
   }
@@ -402,8 +586,11 @@ window.Warman = window.Warman || {};
     const attMark = (v) => v === "İşe geldim" ? "✓" : v === "İzinliyim" ? "−" : "✕";
     const otMark = (v) => v === "Mesai yaptım" ? "✓" : "✕";
     const locMark = (v) => ({ Merkez: "🏢", İvedik: "🏭", Saha: "🦺", Uzaktan: "🏠" }[v] || "");
-    const header = ["Tarih", "Gelme", "Gelme (kategori)", "Mesai", "Mesai (kategori)", "Mesai saati", "Yer", "Yer (kategori)", "Açıklama", "Arşiv"];
-    const rows = ordered.map((r) => [
+    const header = ["Tarih", "Gelme", "Gelme (kategori)", "Mesai", "Mesai (kategori)", "Mesai saati", "Yer", "Yer (kategori)", "Açıklama", "Arşiv", "Giriş", "Çıkış", "Mola (dk)", "Çalışma saati", "Resmi tatil", "Tatil gün karşılığı", "Mesai ücreti", "Tatil ek ücreti", "Ücretsiz gün kesintisi", "Ek ödeme toplamı", "Hesap temeli"];
+    const rows = ordered.map((r) => {
+      const s = monthSettings(monthOf(r.date));
+      const d = P().recordDetails(r, s);
+      return [
       r.date,
       attMark(r.attendance),
       r.attendance || "",
@@ -413,11 +600,15 @@ window.Warman = window.Warman || {};
       locMark(r.location),
       r.location || "",
       r.description || "",
-      r.archive_id || "Güncel"
-    ]);
+      r.archive_id || "Güncel",
+      r.payroll?.startTime || s.payrollStartTime, r.payroll?.endTime || s.payrollEndTime,
+      r.payroll?.breakMinutes ?? s.payrollBreakMinutes, d.workedHours, d.holidayName,
+      d.holidayWorkedFraction, d.overtimePay, d.holidayPay, d.deduction, d.extraPay,
+      d.basis === "gross" ? "Brüt" : "Net tahmin"
+    ]; });
     const stamp = U().todayStr().replace(/\./g, "-");
     if (kind === "csv") {
-      const csv = "\uFEFF" + [header, ...rows].map((row) => row.map(U().csvEscape).join(";")).join("\r\n");
+      const csv = "\uFEFF" + [header, ...rows].map((row) => row.map(csvCell).join(";")).join("\r\n");
       U().download(`is-takibi-${stamp}.csv`, csv, "text/csv;charset=utf-8");
     } else {
       const html = `<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel"><head><meta charset="UTF-8"></head><body><table border="1"><thead><tr>${header.map((h) => `<th>${U().escapeHtml(h)}</th>`).join("")}</tr></thead><tbody>${rows.map((row) => `<tr>${row.map((c) => `<td>${U().escapeHtml(c)}</td>`).join("")}</tr>`).join("")}</tbody></table></body></html>`;
@@ -427,31 +618,74 @@ window.Warman = window.Warman || {};
   }
 
   function showStats(st) {
+    const summary = P().summarize(filtered(), monthSettings(selectedMonth), selectedMonth);
     const overlay = document.createElement("div");
     overlay.className = "modal-overlay";
-    overlay.innerHTML = `<div class="modal"><h3>Dönem istatistikleri</h3>
+    overlay.innerHTML = `<div class="modal payroll-modal" role="dialog" aria-modal="true" aria-labelledby="payrollTitle"><h3 id="payrollTitle">${U().MONTHS[summary.month - 1]} ${summary.year} · Maaş dökümü</h3>
+      <p>${summary.basis === "gross" ? "Brüt tutarlar, vergi ve SGK kesintilerinden önce gösterilir." : "Net maaş üzerinden tahmini ödeme hesabı."} Günlük ücret = aylık / 30; saatlik ücret = aylık / 225.</p>
+      <div class="payroll-total"><span>Hesaplanan aylık toplam</span><strong>${money(summary.total)}</strong></div>
+      <dl class="payroll-lines">
+        <div><dt>Tam aylık temel ücret</dt><dd>${money(summary.baseSalary)}</dd></div>
+        <div><dt>Fazla mesai · ${U().formatHours(summary.overtimeHours)} saat × ${money(summary.hourlyRate)} × ${summary.overtimeMultiplier}</dt><dd>+ ${money(summary.overtimePay)}</dd></div>
+        <div><dt>Resmi tatil · ${U().formatHours(summary.holidayDays)} gün × ${money(summary.dailyRate)}</dt><dd>+ ${money(summary.holidayPay)}</dd></div>
+        <div><dt>Ücretsiz gün · ${summary.unpaidDays} gün</dt><dd>− ${money(summary.deductions)}</dd></div>
+      </dl>
       <div class="stat-grid">
         <div class="card stat-card"><div class="k">İşe geldi</div><div class="v">${st.geldi}</div></div>
         <div class="card stat-card"><div class="k">Mesai saati</div><div class="v">${U().formatHours(st.mesai)}</div></div>
         <div class="card stat-card"><div class="k">İzinli</div><div class="v">${st.izinli}</div></div>
         <div class="card stat-card"><div class="k">Gelmedi</div><div class="v">${st.gelmedi}</div></div>
       </div>
-      <div class="modal-actions" style="margin-top:16px"><button class="btn btn-primary" data-x>Kapat</button></div></div>`;
+      <p class="work-help">${U().formatHours(summary.workedHours)} saat çalışma. Temel ücret tam ay kabul edilir. Kayıt girilmeyen günler ve ücretli izin için otomatik kesinti yapılmaz.</p>
+      <div class="table-wrap work-spaced"><table class="data"><thead><tr><th>Tarih</th><th>Gün</th><th>Çalışma</th><th>Mesai</th><th>Mesai ücreti</th><th>Tatil ek ücreti</th><th>Kesinti</th><th>Ek toplam</th></tr></thead><tbody>
+        ${summary.details.map((d) => `<tr><td>${U().escapeHtml(d.date)}</td><td>${U().escapeHtml(d.holidayName || d.record.attendance)}</td><td>${U().formatHours(d.workedHours)} sa.</td><td>${U().formatHours(d.overtimeHours)} sa.</td><td>${money(d.overtimePay)}</td><td>${money(d.holidayPay)}</td><td>${money(d.deduction)}</td><td>${money(d.extraPay)}</td></tr>`).join("") || '<tr><td colspan="8">Bu ay henüz kayıt yok.</td></tr>'}
+      </tbody></table></div>
+      <p class="work-help">Tam gün tatilde çalışmak, aylık maaşa dahil günlük ücretin üstüne 1 günlük ek ücret getirir; o gün toplam 2 günlük ücrete karşılık gelir. Yarım gün tatil 13.00 sonrasında çalışılmışsa ½ günlük ek ücrettir. Mesai yalnızca girilen fazla süre üzerinden hesaplanır.</p>
+      ${summary.warnings.map((w) => `<p class="work-notice">${U().escapeHtml(w)}</p>`).join("")}
+      <p class="work-help">Kaynaklar: <a href="${P().sources.minimumWage}" target="_blank" rel="noopener noreferrer">ÇSGB asgari ücret</a> · <a href="${P().sources.workRules}" target="_blank" rel="noopener noreferrer">Çalışma ve tatil ücretleri</a> · <a href="${summary.year === 2025 ? P().sources.religious2025 : P().sources.religious2026}" target="_blank" rel="noopener noreferrer">Diyanet bayram takvimi</a></p>
+      <div class="modal-actions" style="margin-top:16px"><button class="btn" data-payroll-csv>Maaş dökümü indir</button><button class="btn btn-primary" data-x>Kapat</button></div></div>`;
     overlay.querySelector("[data-x]").onclick = () => overlay.remove();
+    overlay.querySelector("[data-payroll-csv]").onclick = () => {
+      const rows = [
+        ["Maaş dönemi", selectedMonth], ["Hesap temeli", summary.basis === "gross" ? "Brüt" : "Net tahmin"],
+        ["Aylık temel ücret", summary.baseSalary], ["Mesai ücreti", summary.overtimePay],
+        ["Tatil ek ücreti", summary.holidayPay], ["Ücretsiz gün kesintisi", summary.deductions], ["Toplam", summary.total], [],
+        ["Tarih", "Durum", "Çalışma saati", "Mesai saati", "Mesai ücreti", "Tatil ek ücreti", "Kesinti", "Ek toplam"],
+        ...summary.details.map((d) => [d.date, d.holidayName || d.record.attendance, d.workedHours, d.overtimeHours, d.overtimePay, d.holidayPay, d.deduction, d.extraPay])
+      ];
+      U().download(`maas-dokumu-${selectedMonth}.csv`, "\uFEFF" + rows.map((r) => r.map(csvCell).join(";")).join("\r\n"), "text/csv;charset=utf-8");
+    };
     overlay.onclick = (e) => { if (e.target === overlay) overlay.remove(); };
     document.body.appendChild(overlay);
+    overlay.querySelector("[data-x]").focus();
+    overlay.addEventListener("keydown", (e) => {
+      if (e.key === "Escape") overlay.remove();
+      if (e.key === "Tab") {
+        const focusable = [...overlay.querySelectorAll("a,button")];
+        if (e.shiftKey && document.activeElement === focusable[0]) { e.preventDefault(); focusable.at(-1).focus(); }
+        else if (!e.shiftKey && document.activeElement === focusable.at(-1)) { e.preventDefault(); focusable[0].focus(); }
+      }
+    });
+  }
+
+  function csvCell(value) {
+    let text = typeof value === "number" ? String(value).replace(".", ",") : String(value ?? "");
+    if (typeof value !== "number" && /^[=+\-@]/.test(text)) text = "'" + text;
+    return /[;"\r\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
   }
 
   async function closePeriod() {
     if (archiveView !== "active") return Warman.ui.toast("Sadece güncel dönem kapatılır.");
-    const active = Warman.store.get().work.filter((r) => !r.archive_id);
+    const active = filtered();
     if (!active.length) return Warman.ui.toast("Kapatılacak kayıt yok.");
-    const name = prompt("Arşiv adı (ör. Ekim 2026)");
+    const name = prompt("Bu ayın arşiv adı", `${U().MONTHS[Number(selectedMonth.slice(5)) - 1]} ${selectedMonth.slice(0, 4)}`);
     if (!name || !name.trim()) return;
+    if (name.trim() === "active" || archives().includes(name.trim())) return Warman.ui.toast("Farklı bir arşiv adı seçin.", "error");
     if (!await Warman.ui.confirm({ title: "Dönemi kapat", message: `"${name}" olarak arşivlenecek.`, ok: "Kapat" })) return;
     try {
-      await Warman.api.patchWorkArchive("archive_id=is.null", { archive_id: name.trim() });
-      Warman.store.get().work.forEach((r) => { if (!r.archive_id) r.archive_id = name.trim(); });
+      const ids = new Set(active.map((r) => Number(r.id)));
+      await Warman.api.patchWorkArchive(`archive_id=is.null&id=in.(${[...ids].join(",")})`, { archive_id: name.trim() });
+      Warman.store.get().work.forEach((r) => { if (ids.has(Number(r.id))) r.archive_id = name.trim(); });
       Warman.store.set({ work: Warman.store.get().work });
       archiveView = "active";
       Warman.ui.toast("Dönem kapatıldı.", "success");
@@ -462,6 +696,7 @@ window.Warman = window.Warman || {};
   async function renameArchive() {
     const next = prompt("Yeni arşiv adı", archiveView);
     if (!next || !next.trim()) return;
+    if (next.trim() === "active" || (next.trim() !== archiveView && archives().includes(next.trim()))) return Warman.ui.toast("Bu ad kullanılıyor. Farklı bir arşiv adı seçin.", "error");
     try {
       await Warman.api.patchWorkArchive(`archive_id=eq.${encodeURIComponent('"' + archiveView + '"')}`, { archive_id: next.trim() });
       Warman.store.get().work.forEach((r) => { if (r.archive_id === archiveView) r.archive_id = next.trim(); });
@@ -480,12 +715,6 @@ window.Warman = window.Warman || {};
       Warman.store.set({ work: Warman.store.get().work });
       Warman.router.refresh();
     } catch (err) { Warman.ui.toast("Açılamadı: " + err.message, "error"); }
-  }
-
-  function estimatePay(hours, s) {
-    const rate = U().parseHours(s.hourlyRate);
-    const ot = U().parseHours(s.overtimeRate) || 1;
-    return U().formatHours(hours * rate * ot);
   }
 
   Warman.work = { render, stats, matchExport, parseHours: (v) => U().parseHours(v) };

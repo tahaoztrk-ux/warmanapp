@@ -30,12 +30,13 @@ window.Warman = window.Warman || {};
   async function persist(project) {
     project.updated_at = new Date().toISOString();
     const saved = await Warman.api.saveProject(project);
-    const list = Warman.store.get().projects;
+    const list = [...Warman.store.get().projects];
     const idx = list.findIndex((p) => Number(p.id) === Number(project.id));
-    if (idx >= 0) list[idx] = { ...list[idx], ...saved, ...project };
-    else list.unshift(project);
+    const confirmed = { ...project, ...saved };
+    if (idx >= 0) list[idx] = confirmed;
+    else list.unshift(confirmed);
     Warman.store.set({ projects: list });
-    return project;
+    return confirmed;
   }
 
   async function create(title, extras) {
@@ -53,8 +54,6 @@ window.Warman = window.Warman || {};
       start_date: extras.date || "",
       end_date: ""
     };
-    Warman.store.get().projects.unshift(project);
-    Warman.store.set({ projects: Warman.store.get().projects });
     try {
       await persist(project);
       if (extras.templateTasks) {

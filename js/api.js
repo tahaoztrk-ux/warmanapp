@@ -9,7 +9,7 @@ window.Warman = window.Warman || {};
   }
 
   async function token() {
-    let { data } = await client.auth.getSession();
+    const { data } = await client.auth.getSession();
     let session = data.session;
     if (session?.expires_at && session.expires_at * 1000 < Date.now() + 20000) {
       const refreshed = await client.auth.refreshSession();
@@ -39,7 +39,7 @@ window.Warman = window.Warman || {};
         apikey: Warman.config.supabaseKey,
         Authorization: `Bearer ${access}`,
         "Content-Type": "application/json",
-        Prefer: "return=representation"
+        Prefer: method === "POST" ? "resolution=merge-duplicates,return=representation" : "return=representation"
       }
     };
     if (data != null && method !== "GET" && method !== "DELETE") options.body = JSON.stringify(data);
@@ -165,18 +165,60 @@ window.Warman = window.Warman || {};
     return payload;
   }
 
+  // Work metadata shares the existing text column so older databases need no migration.
+  const WORK_ENVELOPE = "warman.work.v1";
+
+  function normalizeWork(row) {
+    let description = row.description || "";
+    let payroll = row.payroll && typeof row.payroll === "object" ? row.payroll : {};
+    try {
+      const envelope = JSON.parse(description);
+      if (envelope?.format === WORK_ENVELOPE && typeof envelope.description === "string" &&
+          envelope.payroll && typeof envelope.payroll === "object" && !Array.isArray(envelope.payroll)) {
+        description = envelope.description;
+        payroll = envelope.payroll;
+      }
+    } catch (e) { /* A legacy description is plain text. */ }
+    return { ...row, description, payroll };
+  }
+
+  function serializeWork(record) {
+    const payroll = record.payroll && typeof record.payroll === "object" ? record.payroll : {};
+    return {
+      id: record.id,
+      date: record.date,
+      attendance: record.attendance,
+      overtime: record.overtime,
+      overtime_hours: record.overtime_hours,
+      location: record.location,
+      description: Object.keys(payroll).length ? JSON.stringify({
+        format: WORK_ENVELOPE, description: record.description || "", payroll
+      }) : (record.description || ""),
+      archive_id: record.archive_id ?? null
+    };
+  }
+
+  async function saveRecord(table, payload, normalize) {
+    // UI presence does not prove that a row exists in the database. Upsert also
+    // makes a retry and restoring a deleted record safe without a second copy.
+    const rows = await request(`${table}?on_conflict=id`, "POST", payload);
+    const row = Array.isArray(rows) && rows.find((item) => String(item.id) === String(payload.id));
+    if (!row) throw new Error("Kayıt veritabanı tarafından doğrulanmadı. Lütfen tekrar deneyin.");
+    return normalize(row);
+  }
+
   async function loadAll() {
     const errors = [];
     const safe = async (name, normalize) => {
       try {
         const rows = await loadTable(name);
-        return normalize ? rows.map((row) => {
+        return rows.map((row) => {
           try { return normalize(row); }
           catch (err) {
-            console.error(name, row, err);
+            console.error(name + " kaydı okunamadı", err);
             return null;
           }
-        }).filter(Boolean) : rows;
+        }).filter(Boolean);
       } catch (err) {
         errors.push(err.message || name);
         return [];
@@ -185,7 +227,7 @@ window.Warman = window.Warman || {};
     const [projects, tasks, work] = await Promise.all([
       safe("projects", normalizeProject),
       safe("assignments", normalizeTask),
-      safe("work_tracking")
+      safe("work_tracking", normalizeWork)
     ]);
     if (errors.length && !projects.length && !tasks.length && !work.length) {
       throw new Error(errors.join(" · "));
@@ -194,14 +236,7 @@ window.Warman = window.Warman || {};
   }
 
   async function saveTask(task) {
-    const payload = serializeTask(task);
-    const existing = Warman.store.get().tasks.some((t) => Number(t.id) === Number(task.id));
-    if (existing) {
-      const rows = await request(`assignments?id=eq.${task.id}`, "PATCH", payload);
-      return rows?.[0] ? normalizeTask(rows[0]) : task;
-    }
-    const rows = await request("assignments", "POST", payload);
-    return rows?.[0] ? normalizeTask(rows[0]) : task;
+    return saveRecord("assignments", serializeTask(task), normalizeTask);
   }
 
   async function deleteTask(id) {
@@ -210,14 +245,7 @@ window.Warman = window.Warman || {};
   }
 
   async function saveProject(project) {
-    const payload = serializeProject(project);
-    const existing = Warman.store.get().projects.some((p) => Number(p.id) === Number(project.id));
-    if (existing) {
-      const rows = await request(`projects?id=eq.${project.id}`, "PATCH", payload);
-      return rows?.[0] ? normalizeProject(rows[0]) : project;
-    }
-    const rows = await request("projects", "POST", payload);
-    return rows?.[0] ? normalizeProject(rows[0]) : project;
+    return saveRecord("projects", serializeProject(project), normalizeProject);
   }
 
   async function deleteProject(id) {
@@ -226,23 +254,7 @@ window.Warman = window.Warman || {};
   }
 
   async function saveWork(record) {
-    const payload = {
-      id: record.id,
-      date: record.date,
-      attendance: record.attendance,
-      overtime: record.overtime,
-      overtime_hours: record.overtime_hours,
-      location: record.location,
-      description: record.description || "",
-      archive_id: record.archive_id ?? null
-    };
-    const existing = Warman.store.get().work.some((w) => Number(w.id) === Number(record.id));
-    if (existing) {
-      const rows = await request(`work_tracking?id=eq.${record.id}`, "PATCH", payload);
-      return rows?.[0] || record;
-    }
-    const rows = await request("work_tracking", "POST", payload);
-    return rows?.[0] || record;
+    return saveRecord("work_tracking", serializeWork(record), normalizeWork);
   }
 
   async function deleteWork(id) {
@@ -256,6 +268,7 @@ window.Warman = window.Warman || {};
 
   Warman.api = {
     init, request, loadAll, saveTask, deleteTask, saveProject, deleteProject, saveWork, deleteWork,
-    patchWorkArchive, normalizeTask, serializeTask, normalizeProject, serializeProject, token
+    patchWorkArchive, normalizeTask, serializeTask, normalizeProject, serializeProject,
+    normalizeWork, serializeWork, token
   };
 })();
