@@ -13,314 +13,452 @@ const record = (date, overrides = {}) => ({
   id: 1, date, attendance: 'İşe geldim', overtime: 'Mesai yapmadım',
   overtime_hours: null, payroll: {}, ...overrides
 });
-const close = (actual, expected) => assert.ok(Math.abs(actual - expected) < 0.000001, `${actual} != ${expected}`);
-const round = (value) => Math.round((value + Number.EPSILON) * 100) / 100;
-const custom = { payrollSalaryMode: 'custom', payrollMonthlySalary: 31000 };
-const fullCustom = round(31000 - 31000 * 0.03);
-const customDay = round(31000 / 30);
-const absentCustom = round(31000 - customDay - round((31000 - customDay) * 0.03));
-const fullMin = round(28075.50 - 33030 * 0.03);
-const absentMin = round(28075.50 - round(28075.50 / 30) - round((33030 - round(33030 / 30)) * 0.03));
+const overtime = (date, hours, payroll = {}) => record(date, {
+  overtime: 'Mesai yaptım', overtime_hours: hours, payroll
+});
+const absent = (date, payroll = {}) => record(date, { attendance: 'Gelmedim', payroll });
+const close = (actual, expected) => assert.ok(Math.abs(actual - expected) < 0.000001, actual + ' != ' + expected);
+const round = value => Math.round((value + Number.EPSILON) * 100) / 100;
+// Exact net hourly/daily amounts keep entitlement tests independent of rounding.
+const custom = {
+  payrollSalaryMode: 'custom', payrollMonthlySalary: 22500,
+  payrollMonthlyGross: 30000, payrollBesRate: 0, payrollTravelPay: 0
+};
 
-test('minimum salary keeps yearly rates and empty months still show the monthly wage', () => {
-  const net = P.summarize([], {}, '2026-10', '28.10.2026');
-  const gross = P.summarize([], { payrollSalaryBasis: 'gross' }, '2026-10', '28.10.2026');
+test('yearly minimum wages expose separate net and gross hourly rates', () => {
+  const net = P.rates({}, 2026, 10);
+  const gross = P.rates({ payrollSalaryBasis: 'gross' }, 2026, 10);
   assert.equal(net.baseSalary, 28075.50);
+  assert.equal(net.grossSalary, 33030);
+  assert.equal(net.hourlyRate, 124.78);
+  assert.equal(net.grossHourlyRate, 146.8);
   assert.equal(gross.baseSalary, 33030);
-  close(net.dailyRate, 28075.50 / 30);
-  close(net.hourlyRate, 146.8);
-  close(gross.hourlyRate, 146.8);
-  assert.equal(net.besDeduction, 990.90);
-  assert.equal(net.total, fullMin);
-  assert.equal(net.salaryTotal, fullMin);
-  assert.equal(net.travelPay, 4000);
-  assert.equal(net.overtimePay, 0);
-  assert.equal(net.combinedTotal, round(fullMin + 4000));
-  assert.equal(net.accruedTotal, fullMin);
-  assert.equal(net.recordedDays, 0);
-  assert.equal(net.payableDays, 0);
-  assert.equal(net.unpaidDays, 0);
-  assert.equal(net.dailyBreakdown.length, 0);
-  assert.equal(net.besRate, 3);
-  assert.equal(P.summarize([], {}, '2025-01', '28.10.2026').baseSalary, 22104.67);
+  assert.equal(gross.hourlyRate, 146.8);
+  assert.equal(P.rates({}, 2025, 1).baseSalary, 22104.67);
+  assert.equal(P.rates({}, 2025, 1).grossSalary, 26005.50);
 });
 
-test('unknown minimum-wage years require a custom salary without silently reusing another year', () => {
-  const future = P.summarize([], {}, '2027-01', '28.10.2026');
-  assert.equal(future.salaryKnown, false);
-  assert.equal(future.baseSalary, 0);
-  assert.ok(future.warnings.length >= 1);
-  assert.equal(P.summarize([], { payrollSalaryMode: 'custom', payrollMonthlySalary: '40000,50' }, '2027-01', '28.10.2026').baseSalary, 40000.50);
+test('unknown wage years require explicit salary and warn about missing calendars', () => {
+  const unknown = P.summarize([], {}, '2027-01');
+  assert.equal(unknown.salaryKnown, false);
+  assert.equal(unknown.baseSalary, 0);
+  assert.ok(unknown.warnings.some(message => message.includes('asgari ücret')));
+  assert.ok(unknown.warnings.some(message => message.includes('takvimi')));
+  assert.equal(P.rates({ ...custom, payrollMonthlySalary: '40000,50' }, 2027, 1).baseSalary, 40000.50);
 });
 
-test('daily wage always uses a 30-day month, including February and 31-day months', () => {
-  const s = { payrollSalaryMode: 'custom', payrollMonthlySalary: 30000, payrollBesRate: 0 };
-  const months = [['2026-02', 28], ['2024-02', 29], ['2026-04', 30], ['2026-10', 31]];
-  for (const [month, days] of months) {
-    const summary = P.summarize([], s, month, '01.01.2028');
+test('every calendar month uses a full monthly wage and a thirtieth for an ordinary absence', () => {
+  for (const [month, days] of [['2026-02', 28], ['2024-02', 29], ['2026-04', 30], ['2026-10', 31]]) {
+    const summary = P.summarize([], custom, month);
     assert.equal(summary.daysInMonth, days);
     assert.equal(summary.salaryDays, 30);
-    close(summary.dailyRate, 30000 / 30);
-    assert.equal(summary.total, 30000);
-    const rows = Array.from({ length: days }, (_, i) => record(`${i + 1}.${month.slice(5)}.${month.slice(0, 4)}`, { id: i + 1, payroll: { holidayFraction: 0 } }));
-    const full = P.summarize(rows, s, month);
-    assert.equal(full.total, 30000);
-    assert.equal(full.unpaidDays, 0);
-    const oneAbsent = P.summarize([record(`1.${month.slice(5)}.${month.slice(0, 4)}`, { attendance: 'Gelmedim' })], s, month);
-    assert.equal(oneAbsent.total, 29000);
+    assert.equal(summary.dailyRate, 750);
+    assert.equal(summary.salaryTotal, 22500);
+    const missing = P.summarize([absent('02.' + month.slice(5) + '.' + month.slice(0, 4))], custom, month);
+    assert.equal(missing.deductions, 750);
+    assert.equal(missing.salaryTotal, 21750);
   }
 });
 
-test('1000 entered overtime hours count unchanged on weekdays, with holiday hours at the rest-day rate', () => {
-  const s = { payrollSalaryMode: 'custom', payrollMonthlySalary: 22500 };
-  const weekday = P.recordDetails(record('05.10.2026', { overtime: 'Mesai yaptım', overtime_hours: '1000' }), s);
-  assert.equal(weekday.overtimeHours, 1000);
-  assert.equal(weekday.overtimePay, 150000);
-  assert.equal(weekday.dayKind, 'weekday');
-  const holiday = P.recordDetails(record('29.10.2026', { overtime: 'Mesai yaptım', overtime_hours: '1000' }), s);
-  assert.equal(holiday.overtimeHours, 1000);
-  assert.equal(holiday.overtimePay, 200000);
-  assert.equal(holiday.dayKind, 'holiday');
+test('an empty month starts with full salary and monthly OKS with fractional lira discarded', () => {
+  const summary = P.summarize([], {}, '2026-10');
+  assert.equal(summary.besBase, 33030);
+  assert.equal(summary.besDeduction, 990);
+  assert.equal(summary.appliedBesDeduction, 990);
+  assert.equal(summary.salaryTotal, 27085.50);
+  assert.equal(summary.overtimePay, 0);
+  assert.equal(summary.travelPay, 4000);
+  assert.equal(summary.combinedTotal, 31085.50);
+  assert.equal(summary.recordedDays, 0);
 });
 
-test('saturday work hours are overtime at 1.5 and are not doubled as a weekday plus overtime', () => {
-  const sat = P.recordDetails(record('31.10.2026', { overtime: 'Mesai yaptım', overtime_hours: 10 }), {});
-  assert.equal(sat.dayKind, 'saturday');
-  assert.equal(sat.overtimeHours, 10);
-  assert.equal(sat.overtimePay, round(10 * 146.8 * 1.5));
-  const weekday = P.recordDetails(record('30.10.2026', { overtime: 'Mesai yaptım', overtime_hours: 10 }), {});
-  assert.equal(weekday.dayKind, 'weekday');
-  assert.equal(weekday.overtimePay, sat.overtimePay);
-  const cameOnly = P.recordDetails(record('31.10.2026'), {});
-  assert.equal(cameOnly.overtimeHours, 0);
-  assert.equal(cameOnly.overtimePay, 0);
+test('ordinary saved and unrecorded dates do not stack or remove monthly wages', () => {
+  const one = record('05.10.2026');
+  const two = record('06.10.2026', { id: 2 });
+  for (const rows of [[], [one], [one, two]]) {
+    assert.equal(P.summarize(rows, custom, '2026-10').salaryTotal, 22500);
+  }
+  const summary = P.summarize([one, absent('06.10.2026')], custom, '2026-10');
+  assert.equal(summary.recordedDays, 2);
+  assert.equal(summary.payableDays, 1);
+  assert.equal(summary.salaryTotal, 21750);
 });
 
-test('sunday hours use the 2x rest-day rate', () => {
-  const sun = P.recordDetails(record('01.11.2026', { overtime: 'Mesai yaptım', overtime_hours: 10 }), {});
-  assert.equal(sun.dayKind, 'sunday');
-  assert.equal(sun.overtimePay, round(10 * 146.8 * 2));
+test('an ordinary absence reduces net and gross wages before monthly OKS', () => {
+  const summary = P.summarize([absent('05.10.2026')], {}, '2026-10');
+  assert.equal(summary.unpaidDays, 1);
+  assert.equal(summary.deductions, 935.85);
+  assert.equal(summary.paidBaseSalary, 27139.65);
+  assert.equal(summary.paidGross, 31929);
+  assert.equal(summary.besDeduction, 957);
+  assert.equal(summary.salaryTotal, 26182.65);
 });
 
-test('decimal commas and hours:minutes stay exact with no artificial clock-duration maximum', () => {
-  const s = { payrollSalaryMode: 'custom', payrollMonthlySalary: 22500 };
+test('paid leave preserves salary while explicit unpaid leave deducts one day', () => {
+  const paid = record('05.10.2026', { attendance: 'İzinliyim' });
+  const unpaid = { ...paid, payroll: { unpaid: true } };
+  assert.equal(P.summarize([paid], custom, '2026-10').salaryTotal, 22500);
+  const summary = P.summarize([unpaid], custom, '2026-10');
+  assert.equal(summary.unpaidDays, 1);
+  assert.equal(summary.salaryTotal, 21750);
+  assert.equal(P.recordDetails(paid, custom).besDeduction, 0);
+});
+
+test('not attending a full public holiday preserves monthly salary and gross OKS base', () => {
+  const summary = P.summarize([absent('29.10.2026')], {}, '2026-10');
+  assert.equal(summary.unpaidDays, 0);
+  assert.equal(summary.deductions, 0);
+  assert.equal(summary.holidayPay, 0);
+  assert.equal(summary.paidGross, 33030);
+  assert.equal(summary.salaryTotal, P.summarize([], {}, '2026-10').salaryTotal);
+  assert.equal(summary.details[0].protectedHoliday, 1);
+  assert.equal(summary.details[0].netDailyPay, 0);
+});
+
+test('manual full, half and normal-day overrides govern absence deductions', () => {
+  assert.equal(P.recordDetails(absent('05.10.2026', { holidayFraction: 1 }), custom).deduction, 0);
+  assert.equal(P.recordDetails(absent('05.10.2026', { holidayFraction: 0.5 }), custom).deduction, 375);
+  assert.equal(P.recordDetails(absent('29.10.2026', { holidayFraction: 0 }), custom).deduction, 750);
+  const manual = P.recordDetails(record('05.10.2026', {
+    payroll: { holidayFraction: 1, holidayName: 'Özel tatil' }
+  }), custom);
+  assert.equal(manual.holidayPay, 750);
+  assert.equal(manual.holidayName, 'Özel tatil');
+});
+
+test('absence on a half public holiday deducts only the ordinary half day', () => {
+  const summary = P.summarize([absent('28.10.2026')], custom, '2026-10');
+  assert.equal(summary.unpaidDays, 0.5);
+  assert.equal(summary.deductions, 375);
+  assert.equal(summary.salaryTotal, 22125);
+  assert.equal(summary.paidGross, 29500);
+  assert.equal(summary.insuredDays, 29.5);
+});
+
+test('explicit unpaid leave suspends full-day pay even on a holiday or weekly rest day', () => {
+  for (const date of ['28.10.2026', '29.10.2026', '04.10.2026']) {
+    const row = record(date, { attendance: 'İzinliyim', payroll: { unpaid: true } });
+    const detail = P.recordDetails(row, custom);
+    assert.equal(detail.unpaidDays, 1);
+    assert.equal(detail.deduction, 750);
+    assert.equal(detail.holidayPay, 0);
+    assert.equal(detail.restPay, 0);
+  }
+});
+
+test('working full and half holidays adds the daily entitlement once', () => {
+  const full = P.recordDetails(record('29.10.2026'), custom);
+  const half = P.recordDetails(record('28.10.2026'), custom);
+  assert.equal(full.holidayPay, 750);
+  assert.equal(full.grossHolidayPay, 1000);
+  assert.equal(full.dailyPay, 1500);
+  assert.equal(full.overtimePay, 0);
+  assert.equal(half.holidayPay, 375);
+  assert.equal(half.dailyPay, 1125);
+  assert.equal(P.recordDetails(record('29.10.2026', { attendance: 'İzinliyim' }), custom).holidayPay, 0);
+});
+
+test('a half holiday only adds holiday pay when its holiday portion was worked', () => {
+  const morningOnly = P.recordDetails(record('28.10.2026', {
+    payroll: { holidayWorked: false }
+  }), custom);
+  assert.equal(morningOnly.holidayWorkedFraction, 0);
+  assert.equal(morningOnly.holidayPay, 0);
+  assert.equal(morningOnly.unpaidDays, 0);
+  assert.equal(morningOnly.dailyPay, 750);
+});
+
+test('ten actual holiday hours produce one daily supplement and only 2.5 overtime hours', () => {
+  const detail = P.recordDetails(overtime('29.10.2026', 10, { hoursKind: 'worked' }), custom);
+  assert.equal(detail.enteredOvertime, 10);
+  assert.equal(detail.overtimeHours, 2.5);
+  assert.equal(detail.extraOvertimeHours, 2.5);
+  assert.equal(detail.holidayPay, 750);
+  assert.equal(detail.overtimePay, 375);
+  assert.equal(detail.grossOvertimePay, 500);
+  assert.equal(detail.dailyPay, 1875);
+  const short = P.recordDetails(overtime('29.10.2026', 1, { hoursKind: 'worked' }), custom);
+  assert.equal(short.holidayPay, 750);
+  assert.equal(short.overtimePay, 0);
+});
+
+test('half-cent wage additions round up correctly with floating-point hourly rates', () => {
+  const detail = P.recordDetails(overtime('29.10.2026', 10, { hoursKind: 'worked' }), {});
+  assert.equal(detail.overtimePay, 467.93);
+  assert.equal(detail.holidayPay, 935.85);
+  assert.equal(detail.extraPay, 1403.78);
+});
+
+test('legacy actual holiday hours avoid duplication while separately entered overtime stays additional', () => {
+  const legacy = P.recordDetails(overtime('29.10.2026', 10, { workedHours: 10 }), custom);
+  const additional = P.recordDetails(overtime('29.10.2026', 2, { hoursKind: 'overtime' }), custom);
+  const oldAdditional = P.recordDetails(overtime('29.10.2026', 2), custom);
+  assert.equal(legacy.overtimeHours, 2.5);
+  assert.equal(legacy.overtimePay, 375);
+  assert.equal(additional.overtimeHours, 2);
+  assert.equal(additional.overtimePay, 300);
+  assert.equal(additional.holidayPay, 750);
+  assert.equal(oldAdditional.overtimePay, 300);
+});
+
+test('unworked weekly rest preserves salary and the configured rest day can change', () => {
+  assert.equal(P.recordDetails(absent('04.10.2026'), custom).unpaidDays, 0);
+  const saturdayRest = { ...custom, payrollWeeklyRestDay: 6 };
+  assert.equal(P.recordDetails(absent('03.10.2026'), saturdayRest).unpaidDays, 0);
+  assert.equal(P.recordDetails(absent('04.10.2026'), saturdayRest).unpaidDays, 1);
+  assert.equal(P.recordDetails(absent('04.10.2026'), { ...custom, payrollWeeklyRestDay: -1 }).unpaidDays, 1);
+});
+
+test('short weekly-rest work earns an additional 1.5 daily wages, without an hourly duplicate', () => {
+  for (const hours of [1, 7.5]) {
+    const detail = P.recordDetails(overtime('04.10.2026', hours, { hoursKind: 'worked' }), custom);
+    assert.equal(detail.overtimeHours, hours);
+    assert.equal(detail.extraOvertimeHours, 0);
+    assert.equal(detail.restPay, 1125);
+    assert.equal(detail.overtimePay, 1125);
+    assert.equal(detail.holidayPay, 0);
+    assert.equal(detail.dailyPay, 1875);
+  }
+});
+
+test('long weekly-rest work adds the excess above 7.5 hours at the overtime rate', () => {
+  const detail = P.recordDetails(overtime('04.10.2026', 10, { hoursKind: 'worked' }), custom);
+  assert.equal(detail.overtimeHours, 10);
+  assert.equal(detail.extraOvertimeHours, 2.5);
+  assert.equal(detail.restPay, 1125);
+  assert.equal(detail.actualOvertimePay, 375);
+  assert.equal(detail.overtimePay, 1500);
+  const summary = P.summarize([overtime('04.10.2026', 10, { hoursKind: 'worked' })], custom, '2026-10');
+  assert.equal(summary.salaryTotal, 22500);
+  assert.equal(summary.overtimePay, 1500);
+  assert.equal(summary.combinedTotal, 24000);
+});
+
+test('a saved more favourable weekly-rest coefficient remains effective', () => {
+  const detail = P.recordDetails(overtime('04.10.2026', 7.5, { hoursKind: 'worked' }), {
+    ...custom, payrollRestMultiplier: 2
+  });
+  assert.equal(detail.restPay, 1500);
+  assert.equal(detail.overtimePay, 1500);
+  assert.equal(detail.dailyPay, 2250);
+});
+
+test('a public holiday coinciding with weekly rest uses the greater daily entitlement once', () => {
+  const detail = P.recordDetails(overtime('04.10.2026', 10, {
+    holidayFraction: 1, hoursKind: 'worked'
+  }), custom);
+  assert.equal(round(detail.holidayPay + detail.restPay), 1125);
+  assert.equal(detail.actualOvertimePay, 375);
+  assert.equal(round(detail.holidayPay + detail.overtimePay), 1500);
+  assert.equal(detail.dailyPay, 2250);
+});
+
+test('Saturday overtime separates the correct 2202 gross from the 1871.70 net estimate', () => {
+  const detail = P.recordDetails(overtime('31.10.2026', 10, { hoursKind: 'worked' }), {});
+  assert.equal(detail.dayKind, 'saturday');
+  assert.equal(detail.overtimeHours, 10);
+  assert.equal(detail.overtimeMultiplier, 1.5);
+  assert.equal(detail.overtimePay, 1871.70);
+  assert.equal(detail.grossOvertimePay, 2202);
+  const gross = P.recordDetails(overtime('31.10.2026', 10, { hoursKind: 'worked' }), { payrollSalaryBasis: 'gross' });
+  assert.equal(gross.overtimePay, 2202);
+});
+
+test('a normal Saturday uses separately entered overtime without automatically paying a whole shift', () => {
+  const settings = { ...custom, payrollSaturdayOvertime: false };
+  assert.equal(P.dayKind('31.10.2026', settings).allHoursExtra, false);
+  assert.equal(P.recordDetails(record('31.10.2026'), settings).overtimePay, 0);
+  assert.equal(P.recordDetails(overtime('31.10.2026', 2, { hoursKind: 'overtime' }), settings).overtimePay, 300);
+  assert.equal(P.dayKind('31.10.2026', custom).allHoursExtra, true);
+});
+
+test('changing a former extra-work day to a normal workday does not turn its stored full shift into overtime', () => {
+  for (const [date, settings] of [
+    ['31.10.2026', { ...custom, payrollSaturdayOvertime: false }],
+    ['04.10.2026', { ...custom, payrollWeeklyRestDay: 1 }]
+  ]) {
+    const detail = P.recordDetails(overtime(date, 8, {
+      hoursKind: 'worked', workedHours: 8
+    }), settings);
+    assert.equal(detail.workedHours, 8);
+    assert.equal(detail.overtimeHours, 0);
+    assert.equal(detail.extraOvertimeHours, 0);
+    assert.equal(detail.overtimePay, 0);
+    assert.equal(detail.restPay, 0);
+    assert.ok(detail.warnings.some(message => message.includes('yalnız fazla saatleri')));
+  }
+});
+
+test('overtime entered on an absent or leave record is ignored and explained', () => {
+  for (const attendance of ['Gelmedim', 'İzinliyim']) {
+    const row = { ...overtime('05.10.2026', 10), attendance };
+    const detail = P.recordDetails(row, custom);
+    assert.equal(detail.overtimeHours, 0);
+    assert.equal(detail.overtimePay, 0);
+    assert.equal(detail.grossOvertimePay, 0);
+    assert.ok(detail.warnings.some(message => message.includes('mesai')));
+  }
+});
+
+test('decimal commas and hours:minutes retain precision without a clock-duration cap', () => {
   for (const input of ['1,5', '1.5', '1:30']) {
-    const d = P.recordDetails(record('05.10.2026', { overtime: 'Mesai yaptım', overtime_hours: input }), s);
-    assert.equal(d.overtimeHours, 1.5);
-    assert.equal(d.overtimePay, 225);
+    const detail = P.recordDetails(overtime('05.10.2026', input), custom);
+    assert.equal(detail.overtimeHours, 1.5);
+    assert.equal(detail.overtimePay, 225);
   }
   assert.equal(P.parseHours('1000:30'), 1000.5);
-  assert.equal(P.parseHours('not a number'), 0);
+  assert.equal(P.parseHours('bad input'), 0);
   assert.equal(P.parseHours(Infinity), 0);
-  const precise = P.summarize([record('05.10.2026', { overtime: 'Mesai yaptım', overtime_hours: '1000.123456' })], custom, '2026-10', '28.10.2026');
-  assert.equal(precise.overtimeHours, 1000.123456);
+  assert.equal(P.parseHours(-2), 0);
+  const large = P.summarize([overtime('05.10.2026', '1000.123456')], custom, '2026-10');
+  assert.equal(large.overtimeHours, 1000.123456);
+  assert.equal(large.overtimePay, 150018.52);
 });
 
-test('overtime quantities are not rejected by attendance choices', () => {
-  const d = P.recordDetails(record('05.10.2026', { attendance: 'Gelmedim', overtime: 'Mesai yaptım', overtime_hours: 1000 }), {});
-  assert.equal(d.overtimeHours, 1000);
-  assert.equal(d.workedHours, 0);
-  assert.equal(d.unpaidDays, 1);
-  assert.equal(d.dailyPay, d.overtimePay);
-  assert.equal(d.besDeduction, 0);
-});
-
-test('old clock records remain readable but break durations no longer reduce hours', () => {
-  const d = P.recordDetails(record('05.10.2026', { payroll: { startTime: '08:30', endTime: '18:30', breakMinutes: 60 } }), {});
-  assert.equal(d.workedHours, 10);
-  assert.equal(P.recordDetails(record('05.10.2026', { payroll: { workedHours: '1000' } }), {}).workedHours, 1000);
-  const overnight = P.recordDetails(record('05.10.2026', { payroll: { startTime: '22:00', endTime: '06:00', breakMinutes: 30 } }), {});
+test('legacy clock metadata remains readable without reintroducing break deductions', () => {
+  const detail = P.recordDetails(record('05.10.2026', {
+    payroll: { startTime: '08:30', endTime: '18:30', breakMinutes: 60 }
+  }), custom);
+  assert.equal(detail.workedHours, 10);
+  const overnight = P.recordDetails(record('05.10.2026', {
+    payroll: { startTime: '22:00', endTime: '06:00', breakMinutes: 30 }
+  }), custom);
   assert.equal(overnight.workedHours, 8);
 });
 
-test('worked full and half holidays add the selected daily fraction without shift-clock restrictions', () => {
-  const full = P.recordDetails(record('29.10.2026'), custom);
-  assert.equal(full.holidayPay, customDay);
-  assert.equal(full.dailyPay, round(customDay * 2));
-  const half = P.recordDetails(record('28.10.2026', { payroll: { endTime: '13:00' } }), custom);
-  assert.equal(half.holidayPay, round(customDay / 2));
-  assert.equal(half.dailyPay, round(customDay + customDay / 2));
-  assert.equal(P.recordDetails(record('29.10.2026', { attendance: 'İzinliyim' }), custom).holidayPay, 0);
+test('custom net salaries require a gross reference before OKS can be estimated', () => {
+  const settings = { payrollSalaryMode: 'custom', payrollMonthlySalary: 31000 };
+  const missing = P.summarize([overtime('05.10.2026', 2)], settings, '2026-10');
+  assert.equal(missing.grossKnown, false);
+  assert.equal(missing.besDeduction, 0);
+  assert.equal(missing.salaryTotal, 31000);
+  assert.ok(missing.warnings.some(message => message.includes('BES hesaplanmadı')));
+  const known = P.summarize([], { ...settings, payrollMonthlyGross: 40000 }, '2026-10');
+  assert.equal(known.grossKnown, true);
+  assert.equal(known.besDeduction, 1200);
+  assert.equal(known.salaryTotal, 29800);
+});
+
+test('monthly OKS includes eligible gross overtime and holiday additions while travel stays separate', () => {
+  const rows = [overtime('05.10.2026', 2), record('29.10.2026', { id: 2 })];
+  const summary = P.summarize(rows, {}, '2026-10');
+  assert.equal(summary.grossOvertimePay, 440.40);
+  assert.equal(summary.grossHolidayPay, 1101);
+  assert.equal(summary.besBase, 34571.40);
+  assert.equal(summary.besDeduction, 1037);
+  assert.equal(summary.holidayPay, 935.85);
+  assert.equal(summary.overtimePay, 374.34);
+  assert.equal(summary.salaryTotal, 27974.35);
+  assert.equal(summary.combinedTotal, 32348.69);
+  const noTravel = P.summarize(rows, { payrollTravelPay: 0 }, '2026-10');
+  assert.equal(noTravel.besBase, summary.besBase);
+  assert.equal(noTravel.besDeduction, summary.besDeduction);
+  assert.equal(round(summary.combinedTotal - noTravel.combinedTotal), 4000);
+});
+
+test('OKS rates remain configurable and contributions discard every fractional lira', () => {
+  assert.equal(P.summarize([], { payrollBesRate: 0 }, '2026-10').besDeduction, 0);
+  assert.equal(P.summarize([], { payrollBesRate: '3,68' }, '2026-10').besDeduction, 1215);
+  assert.equal(P.summarize([], { payrollBesRate: 4 }, '2026-10').besDeduction, 1321);
+  const boundary = P.summarize([], {
+    ...custom, payrollMonthlyGross: 33333.20, payrollBesRate: 3
+  }, '2026-10');
+  // 33333.20 × 3% = 999.996: rounding to cents before truncation would wrongly make 1000.
+  assert.equal(boundary.besDeduction, 999);
+});
+
+test('gross mode displays its full gross entitlement before taxes, SGK and OKS', () => {
+  const summary = P.summarize([overtime('05.10.2026', 10)], {
+    payrollSalaryBasis: 'gross'
+  }, '2026-10');
+  assert.equal(summary.baseSalary, 33030);
+  assert.equal(summary.overtimePay, 2202);
+  assert.equal(summary.besBase, 35232);
+  assert.equal(summary.besDeduction, 1056);
+  assert.equal(summary.appliedBesDeduction, 0);
+  assert.equal(summary.salaryTotal, 33030);
+  assert.equal(summary.combinedTotal, 39232);
+});
+
+test('OKS applies the yearly PEK ceiling and prorates that ceiling for unpaid days', () => {
+  for (const [year, dailyCeiling] of [[2025, 6501.38], [2026, 9909]]) {
+    const summary = P.summarize([overtime('05.10.' + year, 100000)], {
+      payrollSalaryBasis: 'gross', payrollWeeklyRestDay: -1
+    }, year + '-10');
+    assert.equal(summary.pekCeiling, round(dailyCeiling * 30));
+    assert.equal(summary.besBase, round(dailyCeiling * 30));
+    assert.equal(summary.besDeduction, Math.floor(dailyCeiling * 30 * 0.03));
+    const partial = P.summarize([
+      overtime('05.10.' + year, 100000),
+      record('06.10.' + year, { id: 2, attendance: 'İzinliyim', payroll: { unpaid: true } })
+    ], { payrollSalaryBasis: 'gross', payrollWeeklyRestDay: -1 }, year + '-10');
+    assert.equal(partial.insuredDays, 29);
+    assert.equal(partial.pekCeiling, round(dailyCeiling * 29));
+    assert.equal(partial.besBase, partial.pekCeiling);
+    assert.equal(partial.besDeduction, Math.floor(partial.pekCeiling * 0.03));
+  }
+});
+
+test('the reference daily amount applies the same capped OKS as an empty month', () => {
+  const settings = { payrollSalaryMode: 'custom', payrollMonthlySalary: 100000, payrollMonthlyGross: 500000 };
+  const summary = P.summarize([], settings, '2026-10');
+  close(P.rates(settings, 2026, 10).netDailyRate, summary.salaryTotal / 30);
+});
+
+test('daily fractional absence deductions reconcile exactly with the monthly total', () => {
+  const rows = [absent('05.10.2026'), absent('28.10.2026'), absent('29.10.2026')];
+  const summary = P.summarize(rows, {
+    ...custom, payrollMonthlySalary: 31000
+  }, '2026-10');
+  assert.equal(summary.unpaidDays, 1.5);
+  assert.equal(summary.deductions, 1550);
+  close(summary.details.reduce((total, detail) => total + detail.deduction, 0), 1550);
+  close(summary.dailyBreakdown.reduce((total, row) => total + row.netDailyPay, 0), -1550);
+  assert.equal(summary.details.every(detail => detail.besDeduction === 0), true);
+  assert.equal(summary.salaryTotal, 29450);
+});
+
+test('a fully unpaid 31-day month stops deductions at the monthly wage and has no OKS', () => {
+  const rows = Array.from({ length: 31 }, (_, i) => record((i + 1) + '.10.2026', {
+    id: i + 1, attendance: 'İzinliyim', payroll: { unpaid: true }
+  }));
+  const summary = P.summarize(rows, { payrollTravelPay: 0 }, '2026-10');
+  assert.equal(summary.deductions, 28075.50);
+  assert.equal(summary.paidGross, 0);
+  assert.equal(summary.insuredDays, 0);
+  assert.equal(summary.besDeduction, 0);
+  assert.equal(summary.salaryTotal, 0);
+  assert.equal(summary.combinedTotal, 0);
+  close(summary.details.reduce((total, detail) => total + detail.deduction, 0), 28075.50);
+  assert.equal(summary.details.every(detail => detail.netDailyPay <= 0), true);
+});
+
+test('duplicate dates and month boundaries cannot multiply earnings or deductions', () => {
+  const rows = [
+    record('30.09.2026'), record('29.10.2026', { id: 2 }),
+    absent('29.10.2026'), record('01.11.2026', { id: 3 }),
+    record('32.10.2026', { id: 4 })
+  ];
+  const summary = P.summarize(rows, custom, '2026-10');
+  assert.equal(summary.records.length, 1);
+  assert.equal(summary.records[0].id, 2);
+  assert.equal(summary.holidayPay, 750);
+  assert.equal(summary.unpaidDays, 0);
+  assert.ok(summary.warnings.some(message => message.includes('birden fazla')));
+  assert.equal(P.holidayForDate('29.02.2026').known, false);
+  assert.throws(() => P.summarize([], {}, '2026-13'));
+});
+
+test('saved future or past records are independent of asOf and net estimates explain their limits', () => {
+  const rows = [overtime('29.10.2026', 10, { hoursKind: 'worked' })];
+  const before = P.summarize(rows, {}, '2026-10', '01.01.2025');
+  const after = P.summarize(rows, {}, '2026-10', '01.01.2030');
+  assert.equal(before.salaryTotal, after.salaryTotal);
+  assert.equal(before.overtimePay, after.overtimePay);
+  assert.equal(before.combinedTotal, after.combinedTotal);
+  assert.ok(before.warnings.some(message => message.includes('kümülatif vergi')));
   assert.equal(P.holidayForDate('19.03.2026').fraction, 0.5);
   assert.equal(P.holidayForDate('20.03.2026').fraction, 1);
   assert.equal(P.holidayForDate('27.05.2026').fraction, 1);
   assert.equal(P.holidayForDate('30.03.2025').fraction, 1);
-});
-
-test('manual full, half and ordinary-day holiday selections remain authoritative', () => {
-  assert.equal(P.recordDetails(record('29.10.2026', { payroll: { holidayFraction: 0 } }), custom).holidayPay, 0);
-  const manual = P.recordDetails(record('05.10.2026', { payroll: { holidayFraction: 1, holidayName: 'Özel tatil' } }), custom);
-  assert.equal(manual.holidayPay, customDay);
-  assert.equal(manual.holidayName, 'Özel tatil');
-  const manualOt = P.recordDetails(record('05.10.2026', { overtime: 'Mesai yaptım', overtime_hours: 10, payroll: { holidayFraction: 1 } }), {});
-  assert.equal(manualOt.dayKind, 'holiday');
-  assert.equal(manualOt.overtimePay, round(10 * 146.8 * 2));
-});
-
-test('BES is configurable and applies to monthly salary after unpaid leave, without taxing overtime or holiday additions', () => {
-  const rows = [record('05.10.2026', { overtime: 'Mesai yaptım', overtime_hours: 2 }), record('06.10.2026', { id: 2, attendance: 'İzinliyim', payroll: { unpaid: true } }), record('29.10.2026', { id: 3 })];
-  const s = P.summarize(rows, custom, '2026-10', '31.10.2026');
-  assert.equal(s.deductions, customDay);
-  assert.equal(s.besRate, 3);
-  assert.equal(s.besDeduction, 899);
-  assert.equal(s.salaryTotal, 30101);
-  assert.equal(s.overtimePay, 413.33);
-  assert.equal(s.total, 30101);
-  assert.equal(P.summarize(rows, { ...custom, payrollBesRate: 0 }, '2026-10', '31.10.2026').besDeduction, 0);
-  assert.equal(P.summarize([record('05.10.2026')], { ...custom, payrollBesRate: '2,5' }, '2026-10', '31.10.2026').besDeduction, 775);
-});
-
-test('one absence leaves monthly pay exactly one calendar day short besides overtime and holiday extras', () => {
-  const worked = Array.from({ length: 25 }, (_, i) => record(`${i + 1}.10.2026`, { id: i + 1, payroll: { holidayFraction: 0 } }));
-  const absent = record('26.10.2026', { id: 26, attendance: 'Gelmedim' });
-  const overtime = record('27.10.2026', { id: 27, overtime: 'Mesai yaptım', overtime_hours: 2, payroll: { holidayFraction: 0 } });
-  const s = P.summarize([...worked, absent, overtime], custom, '2026-10');
-  assert.equal(s.unpaidDays, 1);
-  assert.equal(s.deductions, customDay);
-  assert.equal(s.paidBaseSalary, round(31000 - customDay));
-  assert.equal(s.accruedBaseSalary, 31000);
-  assert.equal(s.overtimePay, 413.33);
-  assert.equal(s.besDeduction, 899);
-  assert.equal(s.salaryTotal, absentCustom);
-  assert.equal(s.total, absentCustom);
-  const onlyAbsent = P.summarize([absent], custom, '2026-10');
-  assert.equal(onlyAbsent.total, absentCustom);
-  assert.equal(onlyAbsent.total, P.summarize([...worked, absent], custom, '2026-10').total);
-});
-
-test('unrecorded weekends and ordinary saved days do not reduce the monthly wage', () => {
-  const s = P.summarize([record('05.10.2026'), record('27.10.2026', { id: 2 })], custom, '2026-10', '28.10.2026');
-  assert.equal(s.accruedDays, 2);
-  assert.equal(s.recordedDays, 2);
-  assert.equal(s.payableDays, 2);
-  assert.equal(s.unpaidDays, 0);
-  assert.equal(s.accruedBaseSalary, 31000);
-  assert.equal(s.accruedOvertimePay, 0);
-  assert.equal(s.accruedBesDeduction, 930);
-  assert.equal(s.accruedTotal, fullCustom);
-  assert.equal(s.total, s.accruedTotal);
-  assert.equal(s.dailyBreakdown.length, 2);
-});
-
-test('saved-record extras do not depend on the current day or whether the selected month is past or future', () => {
-  const s = P.summarize([record('29.10.2026')], custom, '2026-10', '01.11.2026');
-  assert.equal(s.accruedDays, 1);
-  assert.equal(s.accruedTotal, round(fullCustom + customDay));
-  assert.equal(s.accruedTotal, s.total);
-  const future = P.summarize([record('29.10.2026', { overtime: 'Mesai yaptım', overtime_hours: 1000 })], custom, '2026-10', '30.09.2026');
-  assert.equal(future.accruedDays, 1);
-  assert.equal(future.salaryTotal, round(fullCustom + customDay));
-  assert.equal(future.overtimePay, 275555.56);
-  assert.equal(future.accruedTotal, round(fullCustom + customDay));
-  assert.equal(future.accruedTotal, P.summarize([record('29.10.2026', { overtime: 'Mesai yaptım', overtime_hours: 1000 })], custom, '2026-10', '31.12.2030').accruedTotal);
-  assert.equal(P.summarize([], custom, '2026-10', '31.12.2030').accruedTotal, fullCustom);
-});
-
-test('a fully unpaid month has zero salary and zero BES with exact daily reconciliation', () => {
-  const rows = Array.from({ length: 31 }, (_, index) => record(`${index + 1}.10.2026`, { id: index + 1, attendance: 'İzinliyim', payroll: { unpaid: true } }));
-  const s = P.summarize(rows, {}, '2026-10', '31.10.2026');
-  assert.equal(s.deductions, 28075.5);
-  assert.equal(s.besDeduction, 0);
-  assert.equal(s.total, 0);
-  close(s.details.reduce((total, detail) => total + detail.deduction, 0), s.deductions);
-  assert.equal(s.details.every(detail => detail.netDailyPay <= 0), true);
-});
-
-test('monthly BES and one-day deductions reconcile without using calendar-day remainder slices', () => {
-  const s = P.summarize([record('29.10.2026')], {}, '2026-10', '28.10.2026');
-  assert.equal(s.besDeduction, 990.90);
-  assert.equal(s.paidBaseSalary, 28075.5);
-  assert.equal(s.total, round(28075.5 + s.holidayPay - 990.90));
-  const absent = P.summarize([record('05.10.2026', { attendance: 'Gelmedim' })], {}, '2026-10');
-  assert.equal(absent.deductions, 935.85);
-  assert.equal(absent.paidBaseSalary, 27139.65);
-  assert.equal(absent.total, absentMin);
-  const first = P.recordDetails(record('01.10.2026'), custom).dailyBasePay;
-  const last = P.recordDetails(record('31.10.2026'), custom).dailyBasePay;
-  assert.equal(first, last);
-  assert.equal(first, customDay);
-});
-
-test('duplicate dates, invalid records and calendar-month boundaries cannot multiply earnings', () => {
-  const rows = [record('30.09.2026'), record('29.10.2026', { id: 2 }), record('29.10.2026', { id: 1 }), record('01.11.2026', { id: 3 }), record('32.10.2026', { id: 4 })];
-  const s = P.summarize(rows, custom, '2026-10', '31.10.2026');
-  assert.equal(s.records.length, 1);
-  assert.equal(s.records[0].id, 2);
-  assert.equal(s.holidayPay, customDay);
-  assert.ok(s.warnings.some(warning => warning.includes('birden fazla')));
-  assert.equal(P.holidayForDate('29.02.2026').known, false);
-  assert.throws(() => P.summarize([], {}, '2026-13', '31.10.2026'));
-  assert.equal(P.summarize([], {}, '2026-10', '31.02.2026').total, fullMin);
-});
-
-test('worked days do not stack extra monthly wage; only absences change the base', () => {
-  const first = record('05.10.2026');
-  const second = record('06.10.2026', { id: 2 });
-  const summarize = rows => P.summarize(rows, custom, '2026-10');
-  assert.equal(summarize([]).total, fullCustom);
-  assert.equal(summarize([first]).total, fullCustom);
-  assert.equal(summarize([first, second]).total, fullCustom);
-  const absent = { ...second, attendance: 'Gelmedim' };
-  assert.equal(summarize([first, absent]).total, absentCustom);
-  assert.equal(summarize([first, absent]).payableDays, 1);
-  assert.equal(summarize([absent]).total, absentCustom);
-  assert.equal(summarize([]).total, fullCustom);
-});
-
-test('paid leave keeps the monthly wage but absent and explicitly unpaid records deduct one calendar day', () => {
-  const paidLeave = record('05.10.2026', { attendance: 'İzinliyim' });
-  const unpaidLeave = { ...paidLeave, payroll: { unpaid: true } };
-  const absent = { ...paidLeave, attendance: 'Gelmedim' };
-  assert.equal(P.recordDetails(paidLeave, custom).netDailyPay, round(customDay - round(customDay * 0.03)));
-  assert.equal(P.recordDetails(unpaidLeave, custom).netDailyPay, 0);
-  assert.equal(P.recordDetails(absent, custom).netDailyPay, 0);
-  assert.equal(P.summarize([paidLeave], custom, '2026-10').payableDays, 1);
-  assert.equal(P.summarize([paidLeave], custom, '2026-10').total, fullCustom);
-  assert.equal(P.summarize([unpaidLeave], custom, '2026-10').payableDays, 0);
-  assert.equal(P.summarize([unpaidLeave], custom, '2026-10').total, absentCustom);
-  assert.equal(P.summarize([absent], custom, '2026-10').total, absentCustom);
-});
-
-test('updating the same saved date does not multiply its basic wage', () => {
-  const first = record('05.10.2026');
-  const updated = { ...first, id: 2, overtime: 'Mesai yaptım', overtime_hours: 2 };
-  const s = P.summarize([first, updated], custom, '2026-10');
-  assert.equal(s.recordedDays, 1);
-  assert.equal(s.accruedBaseSalary, 31000);
-  assert.equal(s.salaryTotal, fullCustom);
-  assert.equal(s.overtimePay, 413.33);
-  assert.equal(s.total, fullCustom);
-});
-
-test('BES 3.68 and 4 apply exactly to gross salary only, with travel kept as a separate 4000 pocket', () => {
-  const empty = P.summarize([], {}, '2026-10');
-  assert.equal(empty.travelPay, 4000);
-  assert.equal(empty.salaryTotal, fullMin);
-  assert.equal(empty.overtimePay, 0);
-  const r368 = P.summarize([], { payrollBesRate: 3.68 }, '2026-10');
-  assert.equal(r368.besRate, 3.68);
-  assert.equal(r368.besDeduction, 1215.50);
-  assert.equal(r368.salaryTotal, round(28075.50 - 1215.50));
-  const r4 = P.summarize([], { payrollBesRate: 4 }, '2026-10');
-  assert.equal(r4.besDeduction, 1321.20);
-  assert.equal(r4.salaryTotal, round(28075.50 - 1321.20));
-  const noTravel = P.summarize([record('05.10.2026', { overtime: 'Mesai yaptım', overtime_hours: 2 })], { payrollBesRate: 3.68, payrollTravelPay: 0 }, '2026-10');
-  assert.equal(noTravel.travelPay, 0);
-  assert.equal(noTravel.overtimePay, round(2 * (33030 / 225) * 1.5));
-  assert.equal(noTravel.salaryTotal, round(28075.50 - 1215.50));
-});
-
-test('September start on the 2nd and 17:30 overtime match the real 26200 salary, 957 BES and 3850 overtime', () => {
-  const start = record('01.09.2026', { attendance: 'Gelmedim' });
-  const overtime = record('10.09.2026', { id: 2, overtime: 'Mesai yaptım', overtime_hours: '17:30', payroll: { holidayFraction: 0 } });
-  const s = P.summarize([start, overtime], {}, '2026-09');
-  assert.equal(s.salaryDays, 30);
-  assert.equal(s.dailyRate, 935.85);
-  assert.equal(s.deductions, 935.85);
-  assert.equal(s.besDeduction, 957.87);
-  assert.equal(s.salaryTotal, 26181.78);
-  assert.equal(s.overtimeHours, 17.5);
-  assert.equal(s.overtimePay, 3853.50);
-  assert.equal(s.travelPay, 4000);
-  assert.equal(s.combinedTotal, 34035.28);
 });

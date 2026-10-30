@@ -112,10 +112,11 @@ async function run() {
     check("period labels describe days and overtime hours", await page.locator("#view").textContent().then(text => text.includes("Çalışılan gün") && text.includes("Mesai yapılan saat")));
     check("daily salary uses a 30-day wage month", await page.locator("#dailySalary").textContent().then(text => text.includes("935,85")));
     const visibleEarned = async () => Number((await page.locator("#salaryAccrued").textContent()).replace(/[^0-9,.-]/g, "").replace(/\./g, "").replace(",", "."));
-    const saveDay = async (date, description, overtime, attendance = "İşe geldim") => {
+    const saveDay = async (date, description, overtime, attendance = "İşe geldim", holidayWorked = true) => {
       await page.locator("#wDate").fill(date);
       await page.locator("#wDate").dispatchEvent("change");
       await page.locator(`[data-k="attendance"][data-v="${attendance}"]`).click();
+      if (await page.locator("#wHolidayWorked").count()) await page.locator("#wHolidayWorked").setChecked(holidayWorked);
       if (overtime) {
         const otYes = page.locator('[data-k="overtime"][data-v="Mesai yaptım"]');
         if (await otYes.count()) await otYes.click();
@@ -147,15 +148,43 @@ async function run() {
       await page.locator("#wSave").click();
       await page.waitForFunction(text => Warman.store.get().work.some(row => row.description === text), description);
     };
-    const monthlyNet = 27084.60;
-    const oneDayShort = 26181.78;
+    const monthlyNet = 27085.50;
+    const oneDayShort = 26182.65;
     check("empty month visibly starts at the monthly wage", Math.abs(await visibleEarned() - monthlyNet) < 0.02);
+    await saveDay("29.10.2026", "Tatil günü gelmedim", undefined, "Gelmedim");
+    check("unworked full public holiday preserves the monthly wage", Math.abs(await visibleEarned() - monthlyNet) < 0.02 && await page.locator(".work-table").textContent().then(text => text.includes("Aylık ücret korunur")));
+    await deleteDay("29.10.2026");
+    await saveDay("28.10.2026", "Yarım tatil günü gelmedim", undefined, "Gelmedim");
+    check("unworked half holiday deducts only the ordinary half and adjusts OKS", Math.abs(await visibleEarned() - 26633.57) < 0.02);
+    await deleteDay("28.10.2026");
+    await page.locator("#wHoliday").selectOption("1");
+    await saveDay("20.10.2026", "Elle seçilen tatilde gelmedim", undefined, "Gelmedim");
+    check("manual holiday absence also preserves salary", Math.abs(await visibleEarned() - monthlyNet) < 0.02);
+    await deleteDay("20.10.2026");
+    await saveDay("29.10.2026", "Tatilde toplam on saat çalışma", "10");
+    const holidayTen = await page.evaluate(() => Warman.payroll.recordDetails(Warman.store.get().work.find(row => row.date === "29.10.2026"), Warman.payroll.defaults(2026)));
+    check("holiday actual work does not double count the normal holiday shift", holidayTen.extraOvertimeHours === 2.5 && holidayTen.grossOvertimePay === 550.5 && holidayTen.grossHolidayPay === 1101 && holidayTen.overtimePay === 467.93);
+    await deleteDay("29.10.2026");
+    await saveDay("28.10.2026", "Yalnız tatil öncesi çalışma", "3,5", "İşe geldim", false);
+    check("morning-only work on a half holiday has no holiday premium", await page.evaluate(() => {
+      const row = Warman.store.get().work.find(row => row.date === "28.10.2026");
+      const detail = Warman.payroll.recordDetails(row, Warman.payroll.defaults(2026));
+      return row.payroll.holidayWorked === false && detail.holidayPay === 0 && detail.overtimePay === 0;
+    }));
+    await page.reload();
+    await page.waitForFunction(() => !Warman.store.get().loading);
+    const morningId = await page.evaluate(() => Warman.store.get().work.find(row => row.date === "28.10.2026").id);
+    await page.locator(`[data-edit="${morningId}"]`).click();
+    check("half-holiday work choice and total hours survive save reload and edit", !await page.locator("#wHolidayWorked").isChecked() && await page.locator("#wHours").inputValue() === "3.5");
+    await page.locator("#cancelEdit").click();
+    await deleteDay("28.10.2026");
     await page.locator("#wDate").fill("31.10.2026");
     await page.locator("#wDate").dispatchEvent("change");
     check("saturday form asks hours worked that day", await page.locator("label[for=wHours]").textContent() === "Cumartesi günü geldin. Kaç saat çalıştın?");
     await saveDay("31.10.2026", "Cumartesi 10 saat", "10");
     const saturday = await page.evaluate(() => Warman.payroll.recordDetails(Warman.store.get().work.find(row => row.date === "31.10.2026"), Warman.payroll.defaults(2026)));
-    check("saturday 10 hours stay 10 hours at 1.5x and are not doubled", saturday.dayKind === "saturday" && saturday.overtimeHours === 10 && Math.abs(saturday.overtimePay - 2202) < 0.02);
+    check("saturday 10 hours separate the net estimate from correct 2202 gross", saturday.dayKind === "saturday" && saturday.overtimeHours === 10 && Math.abs(saturday.overtimePay - 1871.70) < 0.02 && saturday.grossOvertimePay === 2202);
+    check("overtime formula and gross basis are visible", await page.locator(".work-table").textContent().then(text => text.includes("225") && text.includes("Brüt") && text.includes("2.202,00")));
     await deleteDay("31.10.2026");
     await saveDay("20.10.2026", "İlk günlük kazanç");
     const oneDayEarned = await visibleEarned();
@@ -191,10 +220,10 @@ async function run() {
     const summary = await getSummary();
     check("October daily rate uses a 30-day wage month", summary.salaryDays === 30 && Math.abs(summary.dailyRate - 28075.5 / 30) < 0.001);
     check("full and half holidays retain their daily wage additions", summary.holidayDays === 1.5 && summary.holidayPay === 1403.78);
-    check("arbitrary 1000 overtime hours are counted without shift limits", summary.overtimeHours === 1002 && Math.abs(summary.overtimePay - 220640.4) < 0.02);
-    check("BES applies to prorated gross after absence deductions", Math.abs(summary.besDeduction - 990.90) < 0.02);
-    check("salary total excludes cash overtime and travel", summary.accruedDays === 4 && summary.unpaidDays === 0 && summary.salaryTotal === summary.total && summary.accruedHolidayPay === 1403.78 && Math.abs(summary.accruedBaseSalary - 28075.5) < 0.02 && Math.abs(summary.salaryTotal - (28075.5 + 1403.78 - 990.90)) < 0.02);
-    check("overtime and travel stay in separate pockets", Math.abs(summary.overtimePay - 220640.4) < 0.02 && summary.travelPay === 4000);
+    check("entered overtime is retained with separate net and gross amounts", summary.overtimeHours === 1002 && Math.abs(summary.overtimePay - 187544.34) < 0.02 && summary.grossOvertimePay === 220640.4);
+    check("BES includes gross overtime and holiday wages and discards fractional lira", summary.besBase === 255321.9 && summary.besDeduction === 7659);
+    check("salary total excludes overtime and travel with all OKS deducted once", summary.accruedDays === 4 && summary.unpaidDays === 0 && summary.salaryTotal === summary.total && summary.accruedHolidayPay === 1403.78 && Math.abs(summary.accruedBaseSalary - 28075.5) < 0.02 && Math.abs(summary.salaryTotal - (28075.5 + 1403.78 - 7659)) < 0.02);
+    check("overtime and travel stay in separate pockets", Math.abs(summary.overtimePay - 187544.34) < 0.02 && summary.travelPay === 4000);
     const accruedText = await page.locator("#salaryAccrued").textContent();
     check("accrued salary is prominently displayed", accruedText.includes(summary.salaryTotal.toLocaleString("tr-TR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })));
     check("overtime pocket is shown separately", (await page.locator("#overtimeAccrued").textContent()).includes(summary.overtimePay.toLocaleString("tr-TR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })));
@@ -249,7 +278,7 @@ async function run() {
     await page.waitForFunction(() => !Warman.store.get().loading);
     check("salary and BES settings survive reload", await page.evaluate(() => Warman.store.get().settings.payrollMonths["2026-10"].payrollSalaryBasis === "gross" && Number(Warman.store.get().settings.payrollMonths["2026-10"].payrollBesRate) === 3));
     await page.locator("#nextMonth").click();
-    check("another month without records still shows its monthly wage", Math.abs(await visibleEarned() - 27084.60) < 0.03);
+    check("another month without records still shows its monthly wage", Math.abs(await visibleEarned() - monthlyNet) < 0.03);
     await page.setViewportSize({ width: 390, height: 844 });
     const mobile = await page.evaluate(() => ({ width: innerWidth, scroll: document.documentElement.scrollWidth,
       cards: [...document.querySelectorAll(".work-quick > .card")].map(el => ({ left: el.getBoundingClientRect().left, right: el.getBoundingClientRect().right })) }));
@@ -274,7 +303,7 @@ async function run() {
     await page.reload();
     await page.waitForFunction(() => !Warman.store.get().loading);
     await saveDay("01.11.2026", "Kasım kaydı arşivlenmemeli", "1");
-    check("recording a date in a future month keeps that month's wage", Math.abs(await visibleEarned() - 27084.60) < 0.03);
+    check("future-month weekly rest work applies its OKS once", Math.abs(await visibleEarned() - 27035.50) < 0.03);
     await page.locator("#wDate").fill("02.11.2026");
     await page.locator("#wDate").dispatchEvent("change");
     await page.locator("#wDesc").fill("Gecikmeli kaydetme");
